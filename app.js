@@ -33,6 +33,8 @@ const el = {
   liveGrid: document.getElementById("live-grid"),
   riskGrid: document.getElementById("risk-grid"),
   realizedGrid: document.getElementById("realized-grid"),
+  detailedStatsGrid: document.getElementById("detailed-stats-grid"),
+  traderVerdict: document.getElementById("trader-verdict"),
   tableOpen: document.getElementById("table-open"),
   tableLive: document.getElementById("table-live"),
   tableClosed: document.getElementById("table-closed"),
@@ -167,6 +169,16 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
+function signedClass(value, { nanClass = "warn" } = {}) {
+  if (value == null || value === "") return nanClass;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return nanClass;
+  if (Math.abs(n) < 1e-9) return "zero";
+  if (n > 0) return "good";
+  if (n < 0) return "bad";
+  return "zero";
+}
+
 function parseISODate(value) {
   if (!value) return null;
   const date = new Date(value);
@@ -221,8 +233,18 @@ function outcomeLabel(position) {
 
 function exitPriceFromOutcome(position) {
   const label = outcomeLabel(position);
-  if (label === OUTCOME.good) return Number(position?.takeProfit);
-  if (label === OUTCOME.bad) return Number(position?.stopLoss);
+  if (label === OUTCOME.good) {
+    const raw = position?.takeProfit;
+    if (raw == null || raw === "") return null;
+    const tp = Number(raw);
+    return Number.isFinite(tp) ? tp : null;
+  }
+  if (label === OUTCOME.bad) {
+    const raw = position?.stopLoss;
+    if (raw == null || raw === "") return null;
+    const sl = Number(raw);
+    return Number.isFinite(sl) ? sl : null;
+  }
   return null;
 }
 
@@ -1494,17 +1516,17 @@ function buildSummary(positions) {
     statHTML(
       "Canlı P/L",
       hasLive ? formatSignedTL(liveAgg.unrealized) : NA,
-      hasLive ? (liveAgg.unrealized > 0 ? "good" : liveAgg.unrealized < 0 ? "bad" : "warn") : "warn"
+      hasLive ? signedClass(liveAgg.unrealized) : "warn"
     ),
     statHTML(
       "Günlük P/L",
       hasLive ? formatSignedTL(liveAgg.dayChange) : NA,
-      hasLive ? (liveAgg.dayChange > 0 ? "good" : liveAgg.dayChange < 0 ? "bad" : "warn") : "warn"
+      hasLive ? signedClass(liveAgg.dayChange) : "warn"
     ),
     statHTML(
       "Günlük Getiri",
       hasLive ? formatSignedPct(dayChangePct) : NA,
-      hasLive ? (dayChangePct > 0 ? "good" : dayChangePct < 0 ? "bad" : "warn") : "warn"
+      hasLive ? signedClass(dayChangePct) : "warn"
     ),
   ]);
 
@@ -1529,14 +1551,16 @@ function buildSummary(positions) {
   ]);
 
   renderStatGrid(el.realizedGrid, [
-    statHTML("Gerçekleşen P/L", formatSignedTL(realizedPnL.pnlTL), realizedPnL.pnlTL >= 0 ? "good" : "bad"),
+    statHTML("Gerçekleşen P/L", formatSignedTL(realizedPnL.pnlTL), signedClass(realizedPnL.pnlTL, { nanClass: "" })),
     statHTML(
       "Gerçekleşen Getiri",
       formatSignedPct(realizedPct),
-      realizedPct != null && realizedPct >= 0 ? "good" : "bad"
+      signedClass(realizedPct, { nanClass: "" })
     ),
     statHTML("Kazanma Oranı", formatPct(winRate), winRate != null && winRate >= 50 ? "good" : "warn"),
   ]);
+
+  renderDetailedStats(closed);
 
   if (STATE.ui.mainTab === "chart") scheduleChartUpdate(positions);
   return;
@@ -1623,6 +1647,153 @@ function buildSummary(positions) {
   if (STATE.ui.summaryTab === "chart") scheduleChartUpdate(positions);
 }
 
+function renderDetailedStats(closedPositions) {
+  const positions = Array.isArray(closedPositions) ? closedPositions : [];
+  const trades = [];
+
+  for (const p of positions) {
+    const exit = exitPriceFromOutcome(p);
+    const { pnlTL, pnlPct } = calcPnL(p, exit);
+    if (pnlTL == null || pnlPct == null) continue;
+
+    const outcome = outcomeLabel(p);
+    if (outcome !== OUTCOME.good && outcome !== OUTCOME.bad) continue;
+
+    const buy = parseISODate(p?.buyDate);
+    const sell = parseISODate(p?.sellDate);
+    const holdDays =
+      buy && sell && Number.isFinite(buy.getTime()) && Number.isFinite(sell.getTime()) ? (sell - buy) / 86_400_000 : null;
+
+    trades.push({ pnlTL, pnlPct, outcome, holdDays });
+  }
+
+  if (!el.detailedStatsGrid) return;
+
+  const n = trades.length;
+  const closedCount = positions.length;
+  const wins = trades.filter((t) => t.pnlTL > 0);
+  const losses = trades.filter((t) => t.pnlTL < 0);
+  const breakeven = trades.filter((t) => t.pnlTL === 0);
+
+  const winRate = n ? (wins.length / n) * 100 : null;
+
+  const sum = (arr, pick) => arr.reduce((acc, x) => acc + (Number(pick(x)) || 0), 0);
+  const avg = (arr, pick) => (arr.length ? sum(arr, pick) / arr.length : null);
+
+  const totalPnL = sum(trades, (t) => t.pnlTL);
+  const totalWins = sum(wins, (t) => t.pnlTL);
+  const totalLossesAbs = Math.abs(sum(losses, (t) => t.pnlTL));
+  const profitFactor = totalLossesAbs > 0 ? totalWins / totalLossesAbs : totalWins > 0 ? Infinity : null;
+
+  const avgWinPct = avg(wins, (t) => t.pnlPct);
+  const avgLossPct = avg(losses, (t) => t.pnlPct);
+
+  const expectancyPct = (() => {
+    if (winRate == null) return null;
+    const w = winRate / 100;
+    const l = 1 - w;
+    if (w === 1 && avgWinPct != null) return avgWinPct;
+    if (l === 1 && avgLossPct != null) return avgLossPct;
+    if (avgWinPct == null || avgLossPct == null) return null;
+    return w * avgWinPct + l * avgLossPct;
+  })();
+
+  const bestPct = n ? Math.max(...trades.map((t) => t.pnlPct)) : null;
+  const worstPct = n ? Math.min(...trades.map((t) => t.pnlPct)) : null;
+
+  const avgHold = avg(trades.filter((t) => t.holdDays != null), (t) => t.holdDays);
+
+  const bySellDate = positions
+    .map((p) => {
+      const sell = parseISODate(p?.sellDate);
+      const exit = exitPriceFromOutcome(p);
+      const { pnlTL } = calcPnL(p, exit);
+      return { sell, pnlTL };
+    })
+    .filter((x) => x.sell && x.pnlTL != null)
+    .sort((a, b) => a.sell - b.sell);
+
+  let bestWinStreak = 0;
+  let bestLossStreak = 0;
+  let curWin = 0;
+  let curLoss = 0;
+  for (const x of bySellDate) {
+    if (x.pnlTL > 0) {
+      curWin += 1;
+      curLoss = 0;
+    } else if (x.pnlTL < 0) {
+      curLoss += 1;
+      curWin = 0;
+    } else {
+      curWin = 0;
+      curLoss = 0;
+    }
+    if (curWin > bestWinStreak) bestWinStreak = curWin;
+    if (curLoss > bestLossStreak) bestLossStreak = curLoss;
+  }
+
+  renderStatGrid(el.detailedStatsGrid, [
+    statHTML("İşlem", String(n)),
+    statHTML("Kazanma", formatPct(winRate), winRate != null && winRate >= 50 ? "good" : "warn"),
+    statHTML("Net P/L", formatSignedTL(totalPnL), signedClass(totalPnL, { nanClass: "" })),
+    statHTML(
+      "Profit Factor",
+      profitFactor == null ? NA : profitFactor === Infinity ? "∞" : String(Math.round(profitFactor * 100) / 100),
+      profitFactor === Infinity || (profitFactor != null && profitFactor >= 1.2) ? "good" : "warn"
+    ),
+    statHTML("Ortalama Kazanç %", avgWinPct == null ? NA : formatSignedPct(avgWinPct), signedClass(avgWinPct, { nanClass: "" })),
+    statHTML("Ortalama Kayıp %", avgLossPct == null ? NA : formatSignedPct(avgLossPct), signedClass(avgLossPct, { nanClass: "" })),
+    statHTML("Beklenti %/işlem", expectancyPct == null ? NA : formatSignedPct(expectancyPct), signedClass(expectancyPct, { nanClass: "" })),
+    statHTML("En iyi / En kötü %", bestPct == null || worstPct == null ? NA : `${formatSignedPct(bestPct)} / ${formatSignedPct(worstPct)}`),
+    statHTML("Seri (W/L)", n ? `${bestWinStreak}/${bestLossStreak}` : NA),
+    statHTML("Ort. Süre (gün)", avgHold == null ? NA : String(Math.round(avgHold * 10) / 10)),
+    statHTML("Breakeven", String(breakeven.length)),
+  ]);
+
+  if (el.traderVerdict) {
+    if (!closedCount) {
+      el.traderVerdict.textContent = "";
+      return;
+    }
+
+    if (!n) {
+      el.traderVerdict.textContent =
+        "Bu bölüm için değerlendirilebilir kapanış verisi yok. (Kapanmış işlemlerde `outcome`=1/0 ve çıkış için `takeProfit`/`stopLoss` dolu olmalı.)";
+      return;
+    }
+
+    if (n < 10) {
+      el.traderVerdict.textContent = `Veri az (${n} işlem). İstatistiklerin anlamlı olması için biraz daha fazla kapanmış işlem gerekir.`;
+      return;
+    }
+
+    if (wins.length && !losses.length) {
+      el.traderVerdict.textContent =
+        "Şu an tüm işlemler kâr görünüyor; bu iyi ama veri tek taraflı. Birkaç kayıplı işlem görmeden sistemin sağlamlığına dair güçlü çıkarım yapmak zor.";
+      return;
+    }
+
+    if (!wins.length && losses.length) {
+      el.traderVerdict.textContent =
+        "Şu an tüm işlemler zarar görünüyor; sistem/uygulama tarafında ciddi iyileştirme gerekiyor.";
+      return;
+    }
+
+    if (expectancyPct != null && expectancyPct > 0) {
+      el.traderVerdict.textContent = "Bu veri setinde pozitif beklenti var (uzun vadede artı).";
+      return;
+    }
+
+    if (expectancyPct != null && expectancyPct <= 0) {
+      el.traderVerdict.textContent =
+        "Bu veri setinde beklenti nötr/negatif görünüyor; giriş/çıkış ve risk yönetimini gözden geçir.";
+      return;
+    }
+
+    el.traderVerdict.textContent = "Çıkarım için veri eksik.";
+  }
+}
+
 function renderTables(items) {
   const open = items.filter((p) => !p.sellDate);
   const closed = items.filter((p) => p.sellDate);
@@ -1690,7 +1861,7 @@ function tableHTML(items, { mode }) {
         const liveChangePct = Number(quote?.changePct);
         const liveValue = qty != null && Number.isFinite(livePrice) ? qty * livePrice : null;
 
-        const changeCls = liveChangePct > 0 ? "good" : liveChangePct < 0 ? "bad" : "warn";
+        const changeCls = signedClass(liveChangePct);
 
         return `
           <tr>
@@ -1740,6 +1911,8 @@ function tableHTML(items, { mode }) {
           <th class="left">Durum</th>
           <th>Adet</th>
           <th>Tutar</th>
+          <th>Getiri</th>
+          <th>Getiri %</th>
           <th>Zarar Durdur</th>
           <th>Kar Al</th>
           <th class="center">Son Durumu</th>
@@ -1749,7 +1922,7 @@ function tableHTML(items, { mode }) {
     `;
 
   if (!items.length) {
-    const colspan = isOpen ? 13 : 9;
+    const colspan = isOpen ? 13 : 11;
     return (
       header +
       `
@@ -1786,8 +1959,9 @@ function tableHTML(items, { mode }) {
           ? ((livePrice / unitCost) - 1) * 100
           : null;
 
-      const changeCls = liveChangePct > 0 ? "good" : liveChangePct < 0 ? "bad" : "warn";
-      const unrealCls = unrealTL > 0 ? "good" : unrealTL < 0 ? "bad" : "warn";
+      const changeCls = signedClass(liveChangePct);
+      const unrealTLCls = signedClass(unrealTL);
+      const unrealPctCls = signedClass(unrealPct);
 
       if (isOpen) {
         const prevLiveChange = STATE.ui.lastLiveChangePctBySymbol[symbol];
@@ -1813,8 +1987,8 @@ function tableHTML(items, { mode }) {
               Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA
             )}</td>
             <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
-            <td class="cell ${unrealCls}">${escapeHTML(unrealTL == null ? NA : formatSignedTL(unrealTL))}</td>
-            <td class="cell ${unrealCls}">${escapeHTML(unrealPct == null ? NA : formatSignedPct(unrealPct))}</td>
+            <td class="cell ${unrealTLCls}">${escapeHTML(unrealTL == null ? NA : formatSignedTL(unrealTL))}</td>
+            <td class="cell ${unrealPctCls}">${escapeHTML(unrealPct == null ? NA : formatSignedPct(unrealPct))}</td>
             <td>${escapeHTML(formatTL(p.stopLoss))}</td>
             <td>${escapeHTML(formatTL(p.takeProfit))}</td>
             <td class="left">${escapeHTML(p.status ?? NA)}</td>
@@ -1822,6 +1996,9 @@ function tableHTML(items, { mode }) {
           </tr>
         `;
       }
+
+      const { pnlTL, pnlPct } = calcPnL(p, exitPriceFromOutcome(p));
+      const pnlCls = signedClass(pnlTL, { nanClass: "" });
 
       return `
         <tr>
@@ -1831,6 +2008,8 @@ function tableHTML(items, { mode }) {
           <td class="left">${escapeHTML(p.status ?? NA)}</td>
           <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
           <td>${escapeHTML(formatTL(p.total))}</td>
+          <td class="cell ${pnlCls}">${escapeHTML(pnlTL == null ? NA : formatSignedTL(pnlTL))}</td>
+          <td class="cell ${pnlCls}">${escapeHTML(pnlPct == null ? NA : formatSignedPct(pnlPct))}</td>
           <td>${escapeHTML(formatTL(p.stopLoss))}</td>
           <td>${escapeHTML(formatTL(p.takeProfit))}</td>
           <td class="cell ${outcomeCls} center">${escapeHTML(outcome)}</td>
@@ -1998,6 +2177,7 @@ function tickersFromPositions() {
   const positions = Array.isArray(STATE.data?.positions) ? STATE.data.positions : [];
   const set = new Set();
   for (const p of positions) {
+    if (p?.sellDate) continue;
     const sym = String(p?.symbol ?? "").trim();
     if (sym) set.add(sym.toUpperCase());
   }

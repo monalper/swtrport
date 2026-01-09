@@ -15,6 +15,7 @@
   --good: #34c759;
   --warn: #ffd60a;
   --bad: #ff453a;
+  --zero: #8e8e93;
 }
 
 * {
@@ -141,6 +142,9 @@ code {
 .heroDelta.warn {
   color: var(--warn);
 }
+.heroDelta.zero {
+  color: var(--zero);
+}
 .heroDelta.bad {
   color: var(--bad);
 }
@@ -233,6 +237,10 @@ code {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
+}
+
+#trader-verdict {
+  margin-top: 8px;
 }
 
 .tableShell {
@@ -515,6 +523,9 @@ code {
 .stat .v.warn {
   color: var(--warn);
 }
+.stat .v.zero {
+  color: var(--zero);
+}
 .stat .v.bad {
   color: var(--bad);
 }
@@ -747,6 +758,9 @@ td.unavailable {
 }
 .cell.warn {
   color: var(--warn);
+}
+.cell.zero {
+  color: var(--zero);
 }
 .cell.bad {
   color: var(--bad);

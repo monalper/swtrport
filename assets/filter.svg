@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1605" height="264" viewBox="0 0 1605 264">
+  <g id="filter" transform="translate(-234 -115)">
+    <g id="Group_14" data-name="Group 14" transform="translate(-317 -25)">
+      <rect id="Rectangle_12" data-name="Rectangle 12" width="280" height="61" rx="30.5" transform="translate(551 140)" fill="#1f1f22"/>
+      <text id="Fiyat_EMA_20_" data-name="Fiyat &gt; EMA (20)" transform="translate(588 181)" fill="#1f1f22" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Fiyat &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">EMA (20)</tspan></text>
+    </g>
+    <g id="Group_13" data-name="Group 13" transform="translate(-317 178)">
+      <rect id="Rectangle_12-2" data-name="Rectangle 12" width="280" height="61" rx="30.5" transform="translate(551 140)" fill="#1f1f22"/>
+      <text id="Fiyat_EMA_20_2" data-name="Fiyat &gt; EMA (20)" transform="translate(588 190)" fill="#1f1f22" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Fiyat &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">EMA (20)</tspan></text>
+    </g>
+    <g id="Group_4" data-name="Group 4" transform="translate(-317 36)">
+      <rect id="Rectangle_12-3" data-name="Rectangle 12" width="280" height="61" rx="30.5" transform="translate(551 140)" fill="#3e3e3e"/>
+      <text id="Fiyat_EMA_20_3" data-name="Fiyat &gt; EMA (20)" transform="translate(588 181)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Fiyat &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">EMA (20)</tspan></text>
+    </g>
+    <g id="Group_3" data-name="Group 3" transform="translate(-317 36)">
+      <rect id="Rectangle_13" data-name="Rectangle 13" width="280" height="61" rx="30.5" transform="translate(851 140)" fill="#3e3e3e"/>
+      <text id="Fiyat_EMA_50_" data-name="Fiyat &gt; EMA (50)" transform="translate(888 181)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Fiyat &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">EMA (50)</tspan></text>
+    </g>
+    <g id="Group_5" data-name="Group 5" transform="translate(235 -663)">
+      <rect id="Rectangle_14" data-name="Rectangle 14" width="280" height="61" rx="30.5" transform="translate(599 839)" fill="#3e3e3e"/>
+      <text id="Fiyat_EMA_200_" data-name="Fiyat &gt; EMA (200)" transform="translate(627 880)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Fiyat &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">EMA (200)</tspan></text>
+    </g>
+    <g id="Group_10" data-name="Group 10" transform="translate(1088 -573)">
+      <rect id="Rectangle_15" data-name="Rectangle 15" width="381" height="61" rx="30.5" transform="translate(370 830)" fill="#3e3e3e"/>
+      <text id="Hacim_Ort._Hacim_30_G" data-name="Hacim &gt; Ort. Hacim 30 G" transform="translate(407 871)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Hacim &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">Ort. Hacim 30 G</tspan></text>
+    </g>
+    <g id="Group_9" data-name="Group 9" transform="translate(787 -149)">
+      <rect id="Rectangle_16" data-name="Rectangle 16" width="340" height="61" rx="30.5" transform="translate(311 406)" fill="#3e3e3e"/>
+      <text id="Hacim_Değişimi_50" data-name="Hacim Değişimi &gt; %50" transform="translate(345 447)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Hacim Değişimi &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">%50</tspan></text>
+    </g>
+    <g id="Group_6" data-name="Group 6" transform="translate(685 -483)">
+      <rect id="Rectangle_17" data-name="Rectangle 17" width="323" height="61" rx="30.5" transform="translate(714 659)" fill="#3e3e3e"/>
+      <text id="RSI_14_45_to_75" data-name="RSI (14) &gt; 45 to 75" transform="translate(765 700)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">RSI (14) &gt; 4</tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">5 to 75</tspan></text>
+    </g>
+    <g id="Group_11" data-name="Group 11" transform="translate(-437 36)">
+      <rect id="Rectangle_18" data-name="Rectangle 18" width="364" height="61" rx="30.5" transform="translate(1151 221)" fill="#3e3e3e"/>
+      <text id="MACD_12_26_Level_0" data-name="MACD (12,26), Level &gt; 0" transform="translate(1188 262)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">MACD (12,26), Level &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">0</tspan></text>
+    </g>
+    <g id="Group_7" data-name="Group 7" transform="translate(-404 -139)">
+      <rect id="Rectangle_19" data-name="Rectangle 19" width="237" height="61" rx="30.5" transform="translate(861 396)" fill="#3e3e3e"/>
+      <text id="ADX_14_25" data-name="ADX (14) &gt; 25" transform="translate(896 437)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">ADX (14) &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">25</tspan></text>
+    </g>
+    <g id="Group_8" data-name="Group 8" transform="translate(-575 -691)">
+      <rect id="Rectangle_21" data-name="Rectangle 21" width="203" height="61" rx="30.5" transform="translate(809 948)" fill="#3e3e3e"/>
+      <text id="Beta_3Y_1" data-name="Beta 3Y &gt; 1" transform="translate(842 989)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">Beta 3Y &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">1</tspan></text>
+    </g>
+    <g id="Group_12" data-name="Group 12" transform="translate(583 -207)">
+      <rect id="Rectangle_20" data-name="Rectangle 20" width="245" height="61" rx="30.5" transform="translate(551 383)" fill="#3e3e3e"/>
+      <text id="CCI_20_100" data-name="CCI (20) &gt; 100" transform="translate(586 424)" fill="#f5f5f7" font-size="28" font-family="InterTight-Regular, Inter Tight"><tspan x="0" y="0">CCI (20) &gt; </tspan><tspan y="0" font-family="InterTight-SemiBold, Inter Tight" font-weight="600">100</tspan></text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portföy Paneli</title>
+    <meta name="description" content="Portföy takip paneli" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#141416" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">İçeriğe atla</a>
+
+    <main class="container" id="main">
+      <header class="hero" aria-label="Özet">
+        <div class="heroValue" id="hero-current" aria-live="polite"></div>
+        <div class="heroSub" aria-label="Hızlı metrikler">
+          <div class="heroStat">
+            <div class="heroLabel">Aktif Tutar</div>
+            <div class="heroSmall" id="hero-active"></div>
+          </div>
+          <div class="heroStat">
+            <div class="heroLabel">Günlük</div>
+            <div class="heroSmall" id="hero-day"></div>
+          </div>
+        </div>
+      </header>
+
+      <nav class="mainTabs" id="main-tabs" role="tablist" aria-label="Sekmeler">
+        <div class="mainTabIndicator" aria-hidden="true"></div>
+        <button class="mainTab" type="button" role="tab" data-tab="portfolios" aria-selected="true" tabindex="0">
+          Portföyler
+        </button>
+        <button class="mainTab" type="button" role="tab" data-tab="live" aria-selected="false" tabindex="-1">
+          Canlı
+        </button>
+        <button class="mainTab" type="button" role="tab" data-tab="risk" aria-selected="false" tabindex="-1">
+          Risk / Hedef
+        </button>
+        <button class="mainTab" type="button" role="tab" data-tab="realized" aria-selected="false" tabindex="-1">
+          Gerçekleşen
+        </button>
+        <button class="mainTab" type="button" role="tab" data-tab="chart" aria-selected="false" tabindex="-1">
+          Grafik
+        </button>
+      </nav>
+
+      <section id="notice" aria-live="polite"></section>
+
+      <section class="mainPanels" id="main-panels">
+        <section class="mainPanel" role="tabpanel" data-tabpanel="portfolios" aria-label="Portföyler">
+          <div class="panelTop">
+            <h2>Güncel Portföy</h2>
+            <span class="subtle" id="count-open"></span>
+          </div>
+          <div class="tableShell">
+            <div class="table-scroll">
+              <table id="table-open"></table>
+            </div>
+          </div>
+        </section>
+
+        <section class="mainPanel" role="tabpanel" data-tabpanel="live" aria-label="Canlı" hidden>
+          <div class="panelTop">
+            <h2>Canlı</h2>
+            <span id="live-status" class="subtle panelRight" aria-live="polite"></span>
+          </div>
+          <div class="statsGrid" id="live-grid"></div>
+          <div class="spacer"></div>
+          <div class="tableShell">
+            <div class="table-scroll">
+              <table id="table-live"></table>
+            </div>
+          </div>
+        </section>
+
+        <section class="mainPanel" role="tabpanel" data-tabpanel="risk" aria-label="Risk / Hedef" hidden>
+          <div class="panelTop">
+            <h2>Risk / Hedef</h2>
+          </div>
+          <div class="statsGrid" id="risk-grid"></div>
+
+          <div class="section strategySection" aria-label="Strateji">
+            <div class="sectionTop">
+              <h2>Strateji</h2>
+            </div>
+            <div class="strategyBox">
+              <ol class="strategyList">
+                <li>Başlangıç sermayesi <code>20.000 TL</code>; swing trade için kullanılır ve portföyde aynı anda <code>2–6</code> hisse tutulur.</li>
+                <li>
+                  Sıfırdan başlarken, TradingView’daki filtre setinden (eklediğin görsel) <code>1–2</code> hisse seçilip alım yapılır.
+                  <img class="strategyImage" src="assets/filter.svg" alt="TradingView filtre seti" />
+                </li>
+                <li>
+                  ATR’ye göre stop-loss ve çıkış (TP) seviyeleri belirlenir. Toplam risk bütçesi <code>sermaye x %2</code>:
+                  <code>20.000 x 0,02 = 400 TL</code>.
+                  Pozisyon büyüklüğü <code>kabul edilen zarar / stop oranı</code> ile hesaplanır (ör. stop <code>%5</code> ise <code>400 / 0,05 = 8.000 TL</code>).
+                </li>
+                <li>
+                  Bir pozisyon kapanınca (stop/TP), portföydeki açık pozisyonların potansiyel zararları toplanır ve <code>400 TL</code>’lik bütçeden düşülür.
+                  Kalan risk ile yeni pozisyon açılır (ör. kalan <code>140 TL</code> ve stop <code>%5</code> ise <code>140 / 0,05 = 2.800 TL</code>).
+                </li>
+                <li>Kar alırken sistem hedefi sabit: risk/ödül oranı <code>1 : 2,5</code>.</li>
+                <li>Portföy büyüdükçe risk bütçesi de büyür; <code>%2</code> kuralı devam eder (400 TL sabit kalmaz).</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <section class="mainPanel" role="tabpanel" data-tabpanel="realized" aria-label="Gerçekleşen" hidden>
+          <div class="panelTop">
+            <h2>Gerçekleşen</h2>
+            <span class="subtle" id="count-closed"></span>
+          </div>
+          <div class="statsGrid" id="realized-grid"></div>
+          <div class="spacer"></div>
+          <div class="tableShell">
+            <div class="table-scroll">
+              <table id="table-closed"></table>
+            </div>
+          </div>
+        </section>
+
+        <section class="mainPanel" role="tabpanel" data-tabpanel="chart" aria-label="Grafik" hidden>
+          <div class="panelTop">
+            <h2>Grafik</h2>
+          </div>
+          <div class="chartMeta subtle" id="twr-meta"></div>
+          <div class="chart" id="twr-chart"></div>
+        </section>
+      </section>
+
+    </main>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,2168 @@
+/* global window, document, FileReader */
+const NA = "-";
+
+const QUOTES_REFRESH_OK_MS = 10_000;
+const QUOTES_REFRESH_ERROR_MS = 30_000;
+const QUOTES_FETCH_TIMEOUT_MS = 8_000;
+
+const STATE = {
+  data: null,
+  filtered: [],
+  quotes: {},
+  live: { state: "idle", lastUpdated: null, message: "", apiBase: "" },
+  history: { start: null, end: null, series: {}, errors: {}, pending: null, tickersKey: "" },
+  ui: {
+    mainTab: "portfolios",
+    wired: false,
+    chartScheduled: false,
+    lastChartPositions: null,
+    lastLiveChangePctBySymbol: Object.create(null),
+    quotesRefresh: { inFlight: false, timerId: null },
+    chartPrefs: { metric: "pct", range: "ALL" },
+  },
+};
+
+const el = {
+  notice: document.getElementById("notice"),
+  meta: document.getElementById("meta"),
+  mainTabs: document.getElementById("main-tabs"),
+  mainPanels: document.getElementById("main-panels"),
+  heroCurrent: document.getElementById("hero-current"),
+  heroActive: document.getElementById("hero-active"),
+  heroDay: document.getElementById("hero-day"),
+  liveGrid: document.getElementById("live-grid"),
+  riskGrid: document.getElementById("risk-grid"),
+  realizedGrid: document.getElementById("realized-grid"),
+  tableOpen: document.getElementById("table-open"),
+  tableLive: document.getElementById("table-live"),
+  tableClosed: document.getElementById("table-closed"),
+  countOpen: document.getElementById("count-open"),
+  countClosed: document.getElementById("count-closed"),
+  liveStatus: document.getElementById("live-status"),
+};
+
+function escapeHTML(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getCurrency() {
+  const cur = STATE.data?.currency;
+  return typeof cur === "string" && cur.trim() ? cur.trim() : "TL";
+}
+
+function formatTL(amount) {
+  if (amount == null || amount === "") return NA;
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return NA;
+  const formatted = new Intl.NumberFormat("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+  return `${formatted} ${getCurrency()}`;
+}
+
+function formatPct(value) {
+  if (value == null || value === "") return NA;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return NA;
+  const formatted = new Intl.NumberFormat("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+  return `${formatted}%`;
+}
+
+function formatSignedTL(amount) {
+  if (amount == null || amount === "") return NA;
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return NA;
+  const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+  return `${sign}${formatTL(Math.abs(n))}`;
+}
+
+function formatSignedPct(value) {
+  if (value == null || value === "") return NA;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return NA;
+  const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+  return `${sign}${formatPct(Math.abs(n))}`;
+}
+
+function currencySymbolFor(cur) {
+  const c = String(cur ?? "").trim().toUpperCase();
+  if (c === "TL" || c === "TRY") return "₺";
+  if (c === "USD") return "$";
+  if (c === "EUR") return "€";
+  return c || "₺";
+}
+
+function formatMoneyPartsTR(amount) {
+  if (amount == null || amount === "") return null;
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return null;
+  const formatted = new Intl.NumberFormat("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+  const idx = formatted.lastIndexOf(",");
+  const intPart = idx >= 0 ? formatted.slice(0, idx) : formatted;
+  const fracPart = idx >= 0 ? formatted.slice(idx) : "";
+  return { intPart, fracPart };
+}
+
+function formatMoneySymbolTR(amount, { signed } = {}) {
+  if (amount == null || amount === "") return NA;
+  const n = typeof amount === "number" ? amount : Number(amount);
+  if (!Number.isFinite(n)) return NA;
+  const sign = signed && n < 0 ? "-" : "";
+  const formatted = new Intl.NumberFormat("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(n));
+  return `${sign}${currencySymbolFor(getCurrency())}${formatted}`;
+}
+
+function renderHero({ activeTL, currentTL, dayChangeTL, dayChangePct, hasLive } = {}) {
+  if (el.heroCurrent) {
+    const parts = formatMoneyPartsTR(currentTL);
+    if (parts) {
+      el.heroCurrent.innerHTML = `
+        <span class="heroSymbol">${escapeHTML(currencySymbolFor(getCurrency()))}</span>
+        <span class="heroInt">${escapeHTML(parts.intPart)}</span>
+        <span class="heroFrac">${escapeHTML(parts.fracPart)}</span>
+      `.trim();
+    } else {
+      el.heroCurrent.textContent = NA;
+    }
+  }
+
+  if (el.heroActive) el.heroActive.textContent = formatMoneySymbolTR(activeTL);
+
+  if (el.heroDay) {
+    if (!hasLive) {
+      el.heroDay.textContent = NA;
+    } else {
+      const cls = dayChangeTL > 0 ? "good" : dayChangeTL < 0 ? "bad" : "warn";
+      const tl = formatMoneySymbolTR(dayChangeTL, { signed: true });
+      const pctRaw = Number(dayChangePct);
+      const pctAbs = Number.isFinite(pctRaw) ? formatPct(Math.abs(pctRaw)) : NA;
+      const pct = pctRaw < 0 ? `-${pctAbs}` : pctAbs;
+      el.heroDay.innerHTML = `<span class="heroDelta ${cls}">${escapeHTML(tl)}</span> <span class="heroDeltaPct">(${escapeHTML(pct)})</span>`;
+    }
+  }
+}
+
+function renderStatGrid(gridEl, items) {
+  if (!gridEl) return;
+  gridEl.innerHTML = Array.isArray(items) ? items.join("") : "";
+}
+
+function round2(n) {
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function parseISODate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateTR(value) {
+  const date = parseISODate(value);
+  if (!date) return NA;
+  return new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", year: "numeric" }).format(date);
+}
+
+function normalize(s) {
+  return String(s ?? "")
+    .toLocaleLowerCase("tr-TR")
+    .normalize("NFKD");
+}
+
+function approxQuantity(total, unitCost) {
+  const t = Number(total);
+  const u = Number(unitCost);
+  if (!Number.isFinite(t) || !Number.isFinite(u) || u === 0) return null;
+  const q = t / u;
+  const nearest = Math.round(q);
+  if (Math.abs(q - nearest) < 1e-6) return nearest;
+  return Math.round(q * 100) / 100;
+}
+
+const OUTCOME = {
+  good: "Başarılı",
+  warn: "Nötr",
+  bad: "Başarısız",
+};
+
+function outcomeClass(label) {
+  if (label === OUTCOME.good) return "good";
+  if (label === OUTCOME.bad) return "bad";
+  if (label === OUTCOME.warn) return "warn";
+  return "";
+}
+
+function outcomeLabel(position) {
+  const o = position?.outcome;
+
+  if (o === 1 || o === "1") return OUTCOME.good;
+  if (o === 0 || o === "0") return OUTCOME.bad;
+  if (o === OUTCOME.good || o === OUTCOME.bad || o === OUTCOME.warn) return o;
+
+  if (!position?.sellDate) return OUTCOME.warn;
+  return NA;
+}
+
+function exitPriceFromOutcome(position) {
+  const label = outcomeLabel(position);
+  if (label === OUTCOME.good) return Number(position?.takeProfit);
+  if (label === OUTCOME.bad) return Number(position?.stopLoss);
+  return null;
+}
+
+function calcPnL(position, exitPrice) {
+  const qty = approxQuantity(position?.total, position?.unitCost);
+  const unitCost = Number(position?.unitCost);
+  const total = Number(position?.total);
+  const exitP = Number(exitPrice);
+
+  if (qty == null || !Number.isFinite(unitCost) || !Number.isFinite(total) || !Number.isFinite(exitP)) {
+    return { pnlTL: null, pnlPct: null, invested: Number.isFinite(total) ? total : null };
+  }
+
+  const pnlTL = qty * (exitP - unitCost);
+  const pnlPct = unitCost !== 0 ? ((exitP / unitCost) - 1) * 100 : null;
+  return { pnlTL, pnlPct, invested: total };
+}
+
+function calcRiskReward(position) {
+  const qty = approxQuantity(position?.total, position?.unitCost);
+  const unitCost = Number(position?.unitCost);
+  const invested = Number(position?.total);
+  const sl = Number(position?.stopLoss);
+  const tp = Number(position?.takeProfit);
+
+  if (
+    qty == null ||
+    !Number.isFinite(unitCost) ||
+    !Number.isFinite(invested) ||
+    !Number.isFinite(sl) ||
+    !Number.isFinite(tp) ||
+    unitCost === 0
+  ) {
+    return { invested: Number.isFinite(invested) ? invested : null, riskTL: null, rewardTL: null };
+  }
+
+  const riskTL = qty * Math.max(unitCost - sl, 0);
+  const rewardTL = qty * Math.max(tp - unitCost, 0);
+  return { invested, riskTL, rewardTL };
+}
+
+function statHTML(k, v, valueClass = "") {
+  const cls = valueClass ? ` ${valueClass}` : "";
+  return `<div class="stat"><span class="k">${escapeHTML(k)}</span><span class="v${cls}">${escapeHTML(
+    v
+  )}</span></div>`;
+}
+
+function setMainTab(nextTab) {
+  const root = el.mainTabs;
+  const panelsRoot = el.mainPanels;
+  if (!root || !panelsRoot) return;
+
+  const tabs = Array.from(root.querySelectorAll('button[role="tab"][data-tab]'));
+  const panels = Array.from(panelsRoot.querySelectorAll('[role="tabpanel"][data-tabpanel]'));
+  if (!tabs.length || !panels.length) return;
+
+  const safeNext = tabs.some((t) => t.dataset.tab === nextTab) ? nextTab : tabs[0]?.dataset?.tab;
+  if (!safeNext) return;
+  STATE.ui.mainTab = safeNext;
+
+  for (const tab of tabs) {
+    const isActive = tab.dataset.tab === safeNext;
+    tab.setAttribute("aria-selected", isActive ? "true" : "false");
+    tab.tabIndex = isActive ? 0 : -1;
+  }
+
+  for (const panel of panels) {
+    const isActive = panel.dataset.tabpanel === safeNext;
+    if (isActive) panel.removeAttribute("hidden");
+    else panel.setAttribute("hidden", "");
+  }
+
+  syncMainTabIndicator();
+  if (safeNext === "chart") scheduleChartUpdate(STATE.filtered || []);
+}
+
+function syncMainTabIndicator() {
+  const root = el.mainTabs;
+  if (!root) return;
+  const indicator = root.querySelector(".mainTabIndicator");
+  if (!indicator) return;
+
+  const active = root.querySelector('button[role="tab"][data-tab][aria-selected="true"]');
+  if (!(active instanceof HTMLElement)) return;
+
+  const baseLeft = 6;
+  indicator.style.width = `${Math.max(0, active.offsetWidth)}px`;
+  indicator.style.transform = `translateX(${Math.max(0, active.offsetLeft - baseLeft)}px)`;
+}
+
+function summaryTabsHTML(groups) {
+  const active = groups.some((g) => g.id === STATE.ui.summaryTab) ? STATE.ui.summaryTab : groups[0]?.id;
+  const list = groups
+    .map((g) => {
+      const isActive = g.id === active;
+      return `<button class="tab" type="button" role="tab" id="summary-tab-${escapeHTML(g.id)}" data-tab="${escapeHTML(
+        g.id
+      )}" aria-selected="${isActive ? "true" : "false"}" aria-controls="summary-panel-${escapeHTML(
+        g.id
+      )}" tabindex="${isActive ? "0" : "-1"}">${escapeHTML(g.label)}</button>`;
+    })
+    .join("");
+
+  const panels = groups
+    .map((g) => {
+      const isActive = g.id === active;
+      const content = g.contentHTML ? String(g.contentHTML) : `<div class="summaryGrid">${g.stats.join("")}</div>`;
+      return `<div class="tabPanel" role="tabpanel" id="summary-panel-${escapeHTML(
+        g.id
+      )}" data-tabpanel="${escapeHTML(g.id)}" aria-labelledby="summary-tab-${escapeHTML(g.id)}"${
+        isActive ? "" : " hidden"
+      }>${content}</div>`;
+    })
+    .join("");
+
+  return `<div class="tabs" role="tablist" aria-label="İstatistik sekmeleri">${list}</div>${panels}`;
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function isDateKey(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s ?? ""));
+}
+
+function tickersFromPositionsList(positions) {
+  const set = new Set();
+  for (const p of positions) {
+    const sym = String(p?.symbol ?? "").trim();
+    if (sym) set.add(sym.toUpperCase());
+  }
+  return Array.from(set);
+}
+
+function minBuyDateKey(positions) {
+  let min = null;
+  for (const p of positions) {
+    const k = String(p?.buyDate ?? "").trim();
+    if (!isDateKey(k)) continue;
+    if (min == null || k < min) min = k;
+  }
+  return min;
+}
+
+function dateKeyFromUnixSeconds(sec) {
+  const ms = Number(sec) * 1000;
+  if (!Number.isFinite(ms)) return null;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function historyApiBases() {
+  const proto = window.location?.protocol || "";
+  const isHttp = proto === "http:" || proto === "https:";
+  if (isHttp) return [""];
+
+  return Array.from(
+    new Set(
+      [
+        STATE.live?.apiBase || "",
+        "",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+      ].filter((x) => typeof x === "string")
+    )
+  );
+}
+
+async function fetchJSONFromBases(pathWithQuery, { signal } = {}) {
+  const bases = historyApiBases();
+  let lastErr = null;
+  for (const base of bases) {
+    try {
+      const prefix = base ? base.replace(/\/+$/, "") : "";
+      const url = `${prefix}${pathWithQuery.startsWith("/") ? "" : "/"}${pathWithQuery}`;
+      const res = await fetch(url, { cache: "no-store", signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error("Fetch basarisiz");
+}
+
+async function ensureHistory(tickers, { start, end, signal } = {}) {
+  const startKey = isDateKey(start) ? start : null;
+  const endKey = isDateKey(end) ? end : null;
+  const tickersKey = tickers.slice().sort().join(",");
+
+  const rangeOk =
+    STATE.history.start &&
+    STATE.history.end &&
+    startKey &&
+    endKey &&
+    STATE.history.start <= startKey &&
+    STATE.history.end >= endKey;
+
+  const tickersOk = tickers.every((t) => STATE.history.series?.[t]);
+
+  if (rangeOk && tickersOk) return;
+
+  const qs = new URLSearchParams();
+  qs.set("tickers", tickersKey);
+  if (startKey) qs.set("start", startKey);
+  if (endKey) qs.set("end", endKey);
+
+  const json = await fetchJSONFromBases(`/api/history?${qs.toString()}`, { signal });
+  STATE.history = {
+    start: startKey,
+    end: endKey,
+    series: json?.series && typeof json.series === "object" ? json.series : {},
+    errors: json?.errors && typeof json.errors === "object" ? json.errors : {},
+    pending: null,
+    tickersKey,
+  };
+}
+
+function computeTWRSeries(positions, historySeries, { liveQuotes } = {}) {
+  const unitFallback = {};
+  for (const p of positions) {
+    const t = String(p?.symbol ?? "").trim().toUpperCase();
+    const unitCost = Number(p?.unitCost);
+    if (t && Number.isFinite(unitCost) && unitFallback[t] == null) unitFallback[t] = unitCost;
+  }
+
+  const liveDayKey = liveQuotes ? todayKey() : null;
+
+  const events = {};
+  const ensureDay = (k) => {
+    if (!events[k]) events[k] = { buys: [], sells: [] };
+    return events[k];
+  };
+
+  for (const p of positions) {
+    const ticker = String(p?.symbol ?? "").trim().toUpperCase();
+    const buyDate = String(p?.buyDate ?? "").trim();
+    if (!ticker || !isDateKey(buyDate)) continue;
+
+    const qty = approxQuantity(p?.total, p?.unitCost);
+    const cost = Number(p?.total);
+    if (qty == null || !Number.isFinite(cost)) continue;
+
+    ensureDay(buyDate).buys.push({ ticker, qty, cost });
+
+    const sellDate = String(p?.sellDate ?? "").trim();
+    if (isDateKey(sellDate)) {
+      const exit = exitPriceFromOutcome(p);
+      ensureDay(sellDate).sells.push({ ticker, qty, exitPrice: Number.isFinite(exit) ? exit : null });
+    }
+  }
+
+  const dateSet = new Set();
+  for (const k of Object.keys(events)) dateSet.add(k);
+  dateSet.add(todayKey());
+
+  for (const series of Object.values(historySeries || {})) {
+    const timestamps = Array.isArray(series?.timestamps) ? series.timestamps : [];
+    for (const ts of timestamps) {
+      const k = dateKeyFromUnixSeconds(ts);
+      if (k) dateSet.add(k);
+    }
+  }
+
+  const allDates = Array.from(dateSet).filter(isDateKey).sort();
+
+  const perTicker = {};
+  for (const [tRaw, series] of Object.entries(historySeries || {})) {
+    const t = String(tRaw).toUpperCase();
+    const timestamps = Array.isArray(series?.timestamps) ? series.timestamps : [];
+    const closes = Array.isArray(series?.close) ? series.close : [];
+    const keys = [];
+    const vals = [];
+    for (let i = 0; i < Math.min(timestamps.length, closes.length); i++) {
+      const k = dateKeyFromUnixSeconds(timestamps[i]);
+      const c = Number(closes[i]);
+      if (!k || !Number.isFinite(c)) continue;
+      keys.push(k);
+      vals.push(c);
+    }
+    perTicker[t] = { keys, vals, i: 0, last: null };
+  }
+
+  const heldQty = {};
+  let cash = 0;
+  let index = 1;
+  let prevValue = 0;
+  let started = false;
+  const points = [];
+
+  for (const day of allDates) {
+    const dayEvents = events[day] || { buys: [], sells: [] };
+
+    const lastClose = {};
+    for (const [t, st] of Object.entries(perTicker)) {
+      while (st.i < st.keys.length && st.keys[st.i] <= day) {
+        st.last = st.vals[st.i];
+        st.i += 1;
+      }
+      lastClose[t] = st.last;
+    }
+
+    if (liveDayKey && day === liveDayKey) {
+      for (const [tRaw, q] of Object.entries(liveQuotes || {})) {
+        const t = String(tRaw).toUpperCase();
+        const price = Number(q?.price);
+        if (Number.isFinite(price)) lastClose[t] = price;
+      }
+    }
+
+    let external = 0;
+
+    for (const s of dayEvents.sells) {
+      const t = s.ticker;
+      const qty = Number(s.qty);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      const price = Number.isFinite(s.exitPrice) ? s.exitPrice : Number(lastClose[t] ?? unitFallback[t]);
+      const proceeds = Number.isFinite(price) ? qty * price : 0;
+      cash += proceeds;
+      heldQty[t] = (heldQty[t] || 0) - qty;
+    }
+
+    for (const b of dayEvents.buys) {
+      const t = b.ticker;
+      const qty = Number(b.qty);
+      const cost = Number(b.cost);
+      if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(cost) || cost <= 0) continue;
+
+      const needed = cash < cost ? cost - cash : 0;
+      if (needed > 0) {
+        cash += needed;
+        external += needed;
+      }
+
+      cash -= cost;
+      heldQty[t] = (heldQty[t] || 0) + qty;
+    }
+
+    let holdingsValue = 0;
+    for (const [t, qtyRaw] of Object.entries(heldQty)) {
+      const qty = Number(qtyRaw);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+      const price = Number(lastClose[t] ?? unitFallback[t]);
+      if (!Number.isFinite(price)) continue;
+      holdingsValue += qty * price;
+    }
+
+    const value = cash + holdingsValue;
+    if (!started) {
+      if (external <= 0 && value <= 0) continue;
+      started = true;
+    }
+
+    const base = prevValue + external;
+    const r = base > 0 ? (value - base) / base : 0;
+    index *= 1 + (Number.isFinite(r) ? r : 0);
+    const dayReturnPct = Number.isFinite(r) ? r * 100 : null;
+    points.push({
+      day,
+      pct: (index - 1) * 100,
+      dayReturnPct,
+      value,
+      holdingsValue,
+      cash,
+      external,
+    });
+    prevValue = value;
+  }
+
+  return points;
+}
+
+function renderTWRChartSVG(points, { container, meta, errors } = {}) {
+  if (!container) return;
+  const list = Array.isArray(points) ? points : [];
+
+  if (errors && Object.keys(errors).length) {
+    const bad = Object.entries(errors)
+      .slice(0, 6)
+      .map(([t, msg]) => `${t}: ${msg}`)
+      .join(" · ");
+    if (meta) meta.textContent = `Grafik kismi: ${bad}`;
+  } else if (meta) {
+    meta.textContent = "";
+  }
+
+  if (list.length < 2) {
+    container.innerHTML = `<div class="subtle">Grafik icin yeterli veri yok veya sunucu kapali. Yerel sunucu ile ac: <code>py -3 server.py 8000</code> veya <code>node server.mjs</code></div>`;
+    return;
+  }
+
+  const first = list[0];
+  const last = list[list.length - 1];
+  const lastPct = last?.pct;
+  if (meta && Number.isFinite(lastPct)) {
+    meta.textContent = `${first.day} -> ${last.day} · TWR: ${formatSignedPct(lastPct)}`;
+  }
+
+  const t0 = Date.parse(`${first.day}T00:00:00Z`);
+  const t1 = Date.parse(`${last.day}T00:00:00Z`);
+  const w = 1000;
+  const h = 260;
+  const padX = 20;
+  const padY = 22;
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const p of list) {
+    if (!Number.isFinite(p.pct)) continue;
+    minY = Math.min(minY, p.pct);
+    maxY = Math.max(maxY, p.pct);
+  }
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    container.innerHTML = `<div class="subtle">Grafik icin veri okunamadi.</div>`;
+    return;
+  }
+
+  const range = maxY - minY || 1;
+  const minPad = minY - range * 0.1;
+  const maxPad = maxY + range * 0.1;
+  const yRange = maxPad - minPad || 1;
+
+  const xFor = (day) => {
+    const t = Date.parse(`${day}T00:00:00Z`);
+    const r = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    return padX + r * (w - padX * 2);
+  };
+
+  const yFor = (pct) => {
+    const r = (maxPad - pct) / yRange;
+    return padY + r * (h - padY * 2);
+  };
+
+  let d = "";
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const x = xFor(p.day);
+    const y = yFor(p.pct);
+    d += i === 0 ? `M ${x.toFixed(2)} ${y.toFixed(2)}` : ` L ${x.toFixed(2)} ${y.toFixed(2)}`;
+  }
+
+  const y0 = 0 >= minPad && 0 <= maxPad ? yFor(0) : null;
+
+  container.innerHTML = `
+    <svg class="chartSvg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Portfoy TWR grafigi">
+      ${y0 != null ? `<line class="chartZero" x1="${padX}" y1="${y0.toFixed(2)}" x2="${w - padX}" y2="${y0.toFixed(2)}" />` : ""}
+      <path class="chartLine" d="${d}" />
+    </svg>
+  `.trim();
+}
+
+function clamp(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  if (x < min) return min;
+  if (x > max) return max;
+  return x;
+}
+
+function parseDayKeyUTC(dayKey) {
+  if (!isDateKey(dayKey)) return null;
+  const t = Date.parse(`${dayKey}T00:00:00Z`);
+  return Number.isFinite(t) ? t : null;
+}
+
+function formatShortDateTR(dayKey) {
+  const t = parseDayKeyUTC(dayKey);
+  if (t == null) return String(dayKey ?? NA);
+  return new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short" }).format(new Date(t));
+}
+
+function formatLongDateTR(dayKey) {
+  const t = parseDayKeyUTC(dayKey);
+  if (t == null) return String(dayKey ?? NA);
+  return new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", year: "numeric" }).format(new Date(t));
+}
+
+function metricLabel(metric) {
+  return metric === "value" ? "Değer" : "Getiri (TWR)";
+}
+
+function formatMetricValue(metric, p) {
+  if (metric === "value") return formatTL(p?.value);
+  return formatSignedPct(p?.pct);
+}
+
+function seriesIndexFromPct(pct) {
+  const x = Number(pct);
+  if (!Number.isFinite(x)) return null;
+  return 1 + x / 100;
+}
+
+function seriesReturnBetween(aPct, bPct) {
+  const a = seriesIndexFromPct(aPct);
+  const b = seriesIndexFromPct(bPct);
+  if (a == null || b == null || a <= 0) return null;
+  return ((b / a) - 1) * 100;
+}
+
+function computeMaxDrawdownPct(points) {
+  let peak = -Infinity;
+  let maxDD = 0;
+  for (const p of points) {
+    const idx = seriesIndexFromPct(p?.pct);
+    if (idx == null || idx <= 0) continue;
+    if (idx > peak) peak = idx;
+    const dd = peak > 0 ? (idx / peak - 1) * 100 : 0;
+    if (dd < maxDD) maxDD = dd;
+  }
+  return Number.isFinite(maxDD) ? maxDD : null;
+}
+
+function nearestIndexByTime(list, t) {
+  if (!list.length) return -1;
+  let lo = 0;
+  let hi = list.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (list[mid].t < t) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo <= 0) return 0;
+  if (lo >= list.length) return list.length - 1;
+  const a = list[lo - 1];
+  const b = list[lo];
+  return Math.abs(a.t - t) <= Math.abs(b.t - t) ? lo - 1 : lo;
+}
+
+function viewForRange(points, range) {
+  if (points.length < 2) return null;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const endT = last.t;
+  const startAll = first.t;
+
+  const clampView = (t0, t1) => {
+    const a = clamp(t0, startAll, endT);
+    const b = clamp(t1, startAll, endT);
+    const minSpan = 3 * 24 * 60 * 60 * 1000;
+    if (b - a < minSpan) return { t0: Math.max(startAll, b - minSpan), t1: b };
+    return { t0: Math.min(a, b), t1: Math.max(a, b) };
+  };
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (range === "1W") return clampView(endT - 7 * dayMs, endT);
+  if (range === "1M") return clampView(endT - 31 * dayMs, endT);
+  if (range === "3M") return clampView(endT - 93 * dayMs, endT);
+  if (range === "6M") return clampView(endT - 186 * dayMs, endT);
+  if (range === "1Y") return clampView(endT - 366 * dayMs, endT);
+  if (range === "YTD") {
+    const endD = new Date(endT);
+    const jan1 = Date.UTC(endD.getUTCFullYear(), 0, 1);
+    return clampView(jan1, endT);
+  }
+  return clampView(startAll, endT);
+}
+
+const CHART_WIDGETS = new WeakMap();
+
+function ensureTwrChartWidget(container) {
+  const existing = CHART_WIDGETS.get(container);
+  if (existing) return existing;
+
+  container.innerHTML = `
+    <div class="chartToolbar" role="group" aria-label="Grafik kontrolleri">
+      <div class="segmented" role="group" aria-label="Metrik">
+        <button class="segBtn" type="button" data-metric="pct" aria-pressed="true">% Getiri</button>
+        <button class="segBtn" type="button" data-metric="value" aria-pressed="false">Değer</button>
+      </div>
+      <div class="rangePills" role="group" aria-label="Zaman aralığı">
+        <button class="pillBtn" type="button" data-range="1W">1H</button>
+        <button class="pillBtn" type="button" data-range="1M">1A</button>
+        <button class="pillBtn" type="button" data-range="3M">3A</button>
+        <button class="pillBtn" type="button" data-range="6M">6A</button>
+        <button class="pillBtn" type="button" data-range="YTD">YTD</button>
+        <button class="pillBtn" type="button" data-range="1Y">1Y</button>
+        <button class="pillBtn" type="button" data-range="ALL">Tümü</button>
+      </div>
+      <div class="chartActions">
+        <span class="chartKpi subtle" data-role="kpi"></span>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="download-png">PNG</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="download-csv">CSV</button>
+      </div>
+    </div>
+    <div class="chartStage" tabindex="0" role="application" aria-label="Portföy grafiği">
+      <canvas class="chartCanvas"></canvas>
+      <div class="chartEmpty subtle" data-role="empty" hidden></div>
+      <div class="chartTooltip" data-role="tooltip" hidden></div>
+    </div>
+  `.trim();
+
+  const canvas = container.querySelector("canvas.chartCanvas");
+  const stage = container.querySelector(".chartStage");
+  const tooltip = container.querySelector('[data-role="tooltip"]');
+  const empty = container.querySelector('[data-role="empty"]');
+  const kpi = container.querySelector('[data-role="kpi"]');
+  const ctx = canvas?.getContext?.("2d");
+
+  const state = {
+    metric: STATE.ui.chartPrefs?.metric === "value" ? "value" : "pct",
+    range: typeof STATE.ui.chartPrefs?.range === "string" ? STATE.ui.chartPrefs.range : "ALL",
+    points: [],
+    view: null,
+    hoverIndex: null,
+    dragging: null,
+    dpr: 1,
+  };
+
+  const setStatus = (message) => {
+    if (!empty) return;
+    const msg = String(message ?? "").trim();
+    if (!msg) {
+      empty.setAttribute("hidden", "");
+      empty.textContent = "";
+      return;
+    }
+    empty.textContent = msg;
+    empty.removeAttribute("hidden");
+  };
+
+  const setMetricButtons = () => {
+    for (const btn of Array.from(container.querySelectorAll("button[data-metric]"))) {
+      btn.setAttribute("aria-pressed", btn.dataset.metric === state.metric ? "true" : "false");
+    }
+  };
+
+  const setRangeButtons = () => {
+    for (const btn of Array.from(container.querySelectorAll("button[data-range]"))) {
+      btn.setAttribute("aria-pressed", btn.dataset.range === state.range ? "true" : "false");
+    }
+  };
+
+  const currentPlotRect = () => {
+    if (!canvas) return { left: 0, top: 0, right: 0, bottom: 0 };
+    const padL = Math.round(46 * state.dpr);
+    const padR = Math.round(16 * state.dpr);
+    const padT = Math.round(14 * state.dpr);
+    const padB = Math.round(28 * state.dpr);
+    return { left: padL, top: padT, right: canvas.width - padR, bottom: canvas.height - padB };
+  };
+
+  const visiblePoints = () => {
+    if (!state.view) return [];
+    const { t0, t1 } = state.view;
+    const out = [];
+    for (const p of state.points) {
+      if (p.t < t0) continue;
+      if (p.t > t1) break;
+      out.push(p);
+    }
+    return out;
+  };
+
+  const draw = () => {
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!state.points.length || !state.view) {
+      if (empty?.hasAttribute("hidden")) setStatus("Grafik için veri yok.");
+      return;
+    }
+    setStatus("");
+
+    const pts = visiblePoints();
+    if (pts.length < 2) {
+      if (empty?.hasAttribute("hidden")) setStatus("Grafik için yeterli veri yok.");
+      return;
+    }
+
+    const plot = currentPlotRect();
+    const plotW = Math.max(1, plot.right - plot.left);
+    const plotH = Math.max(1, plot.bottom - plot.top);
+    const spanT = state.view.t1 - state.view.t0 || 1;
+
+    const yOf = (p) => (state.metric === "value" ? Number(p.value) : Number(p.pct));
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of pts) {
+      const y = yOf(p);
+      if (!Number.isFinite(y)) continue;
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+    if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+      setStatus("Grafik için veri okunamadı.");
+      return;
+    }
+
+    if (state.metric === "pct") {
+      minY = Math.min(minY, 0);
+      maxY = Math.max(maxY, 0);
+    }
+
+    const ySpan = maxY - minY || 1;
+    const pad = ySpan * 0.12;
+    const yMin = minY - pad;
+    const yMax = maxY + pad;
+    const yRange = yMax - yMin || 1;
+
+    const xForT = (t) => plot.left + ((t - state.view.t0) / spanT) * plotW;
+    const yForV = (v) => plot.top + ((yMax - v) / yRange) * plotH;
+
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const themeGood = "#34c759";
+    const themeBad = "#ff453a";
+    const themeText = "#f5f5f7";
+    const themeGrid = "rgba(245,245,247,0.10)";
+    const themeGrid2 = "rgba(245,245,247,0.06)";
+
+    const rangeRetPct =
+      state.metric === "pct"
+        ? seriesReturnBetween(first?.pct, last?.pct)
+        : (() => {
+            const a = Number(first?.value);
+            const b = Number(last?.value);
+            if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null;
+            return ((b / a) - 1) * 100;
+          })();
+
+    const lineColor =
+      rangeRetPct != null && rangeRetPct > 0 ? themeGood : rangeRetPct != null && rangeRetPct < 0 ? themeBad : themeText;
+
+    if (kpi) {
+      const dd = computeMaxDrawdownPct(pts);
+      const retTxt = rangeRetPct == null ? NA : formatSignedPct(rangeRetPct);
+      const ddTxt = dd == null ? NA : formatSignedPct(dd);
+      kpi.textContent = `${metricLabel(state.metric)} • ${formatShortDateTR(first.day)} → ${formatShortDateTR(
+        last.day
+      )} • Getiri: ${retTxt} • Max DD: ${ddTxt}`;
+    }
+
+    ctx.save();
+    ctx.font = `${Math.round(11 * state.dpr)}px "Inter Tight", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
+    ctx.textBaseline = "middle";
+
+    const gridLines = 4;
+    for (let i = 0; i <= gridLines; i++) {
+      const y = plot.top + (i / gridLines) * plotH;
+      ctx.strokeStyle = i === 0 || i === gridLines ? themeGrid : themeGrid2;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(plot.left, y);
+      ctx.lineTo(plot.right, y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(245,245,247,0.70)";
+    const labelCount = 4;
+    for (let i = 0; i <= labelCount; i++) {
+      const v = yMax - (i / labelCount) * yRange;
+      const y = yForV(v);
+      const txt = state.metric === "value" ? formatTL(v) : formatSignedPct(v);
+      ctx.fillText(String(txt), 4 * state.dpr, y);
+    }
+
+    const axisY0 = state.metric === "pct" && 0 >= yMin && 0 <= yMax ? yForV(0) : null;
+    if (axisY0 != null) {
+      ctx.strokeStyle = "rgba(245,245,247,0.18)";
+      ctx.setLineDash([4 * state.dpr, 4 * state.dpr]);
+      ctx.beginPath();
+      ctx.moveTo(plot.left, axisY0);
+      ctx.lineTo(plot.right, axisY0);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    const xLabelY = canvas.height - Math.round(14 * state.dpr);
+    ctx.fillStyle = "rgba(245,245,247,0.62)";
+    ctx.textBaseline = "alphabetic";
+    const leftLbl = formatShortDateTR(first.day);
+    const midLbl = formatShortDateTR(pts[Math.floor(pts.length / 2)].day);
+    const rightLbl = formatShortDateTR(last.day);
+    ctx.fillText(leftLbl, plot.left, xLabelY);
+    const midW = ctx.measureText(midLbl).width;
+    ctx.fillText(midLbl, plot.left + plotW / 2 - midW / 2, xLabelY);
+    const rightW = ctx.measureText(rightLbl).width;
+    ctx.fillText(rightLbl, plot.right - rightW, xLabelY);
+
+    const baselineY = axisY0 != null ? axisY0 : plot.bottom;
+    const gradient = ctx.createLinearGradient(0, plot.top, 0, plot.bottom);
+    const gBase = lineColor === themeBad ? "255,69,58" : lineColor === themeGood ? "52,199,89" : "245,245,247";
+    gradient.addColorStop(0, `rgba(${gBase},0.30)`);
+    gradient.addColorStop(1, `rgba(${gBase},0.02)`);
+
+    const buildPath = () => {
+      ctx.beginPath();
+      let started = false;
+      for (const p of pts) {
+        const yV = yOf(p);
+        if (!Number.isFinite(yV)) continue;
+        const x = xForT(p.t);
+        const y = yForV(yV);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+    };
+
+    buildPath();
+    ctx.lineWidth = 2.25 * state.dpr;
+    ctx.strokeStyle = lineColor;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+
+    buildPath();
+    ctx.lineTo(xForT(last.t), baselineY);
+    ctx.lineTo(xForT(first.t), baselineY);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    if (state.hoverIndex != null && state.hoverIndex >= 0 && state.hoverIndex < pts.length) {
+      const hp = pts[state.hoverIndex];
+      const yV = yOf(hp);
+      if (Number.isFinite(yV)) {
+        const x = xForT(hp.t);
+        const y = yForV(yV);
+        ctx.strokeStyle = "rgba(245,245,247,0.18)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, plot.top);
+        ctx.lineTo(x, plot.bottom);
+        ctx.stroke();
+
+        ctx.fillStyle = lineColor;
+        ctx.beginPath();
+        ctx.arc(x, y, 3.4 * state.dpr, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = "rgba(29,29,31,0.85)";
+        ctx.lineWidth = 2 * state.dpr;
+        ctx.beginPath();
+        ctx.arc(x, y, 4.6 * state.dpr, 0, Math.PI * 2);
+        ctx.stroke();
+
+        if (tooltip && stage) {
+          const dp = hp.dayReturnPct;
+          const dpTxt = dp == null ? NA : formatSignedPct(dp);
+          const valTxt = formatMetricValue(state.metric, hp);
+          tooltip.innerHTML = `
+            <div class="ttDate">${escapeHTML(formatLongDateTR(hp.day))}</div>
+            <div class="ttVal">${escapeHTML(valTxt)}</div>
+            <div class="ttSub subtle">Günlük: ${escapeHTML(dpTxt)}</div>
+          `.trim();
+          tooltip.removeAttribute("hidden");
+
+          const stageRect = stage.getBoundingClientRect();
+          const boxW = 220;
+          const boxH = 76;
+          const px = x / state.dpr + 12;
+          const py = y / state.dpr - boxH - 10;
+          const left = clamp(px, 8, stageRect.width - boxW - 8);
+          const top = clamp(py, 8, stageRect.height - boxH - 8);
+          tooltip.style.left = `${left}px`;
+          tooltip.style.top = `${top}px`;
+        }
+      }
+    } else if (tooltip) {
+      tooltip.setAttribute("hidden", "");
+      tooltip.innerHTML = "";
+    }
+
+    ctx.restore();
+  };
+
+  const resize = () => {
+    if (!canvas || !stage || !ctx) return;
+    const rect = stage.getBoundingClientRect();
+    const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+    state.dpr = dpr;
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    draw();
+  };
+
+  const setData = (points) => {
+    const raw = Array.isArray(points) ? points : [];
+    const mapped = raw
+      .map((p) => {
+        const t = parseDayKeyUTC(p?.day);
+        return t == null ? null : { ...p, t };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.t - b.t);
+
+    state.points = mapped;
+    if (!mapped.length) {
+      state.view = null;
+      draw();
+      return;
+    }
+
+    if (!["1W", "1M", "3M", "6M", "YTD", "1Y", "ALL", "CUSTOM"].includes(state.range)) state.range = "ALL";
+    state.view = viewForRange(mapped, state.range === "CUSTOM" ? "ALL" : state.range) || null;
+    setMetricButtons();
+    setRangeButtons();
+    resize();
+  };
+
+  const setMetric = (metric) => {
+    if (metric !== "pct" && metric !== "value") return;
+    state.metric = metric;
+    STATE.ui.chartPrefs.metric = metric;
+    setMetricButtons();
+    draw();
+  };
+
+  const setRange = (range) => {
+    if (!["1W", "1M", "3M", "6M", "YTD", "1Y", "ALL", "CUSTOM"].includes(range)) return;
+    state.range = range;
+    STATE.ui.chartPrefs.range = range;
+    setRangeButtons();
+    if (state.points.length) state.view = viewForRange(state.points, range === "CUSTOM" ? "ALL" : range);
+    draw();
+  };
+
+  const zoomAtX = (clientX, factor) => {
+    if (!state.view || !stage || !state.points.length) return;
+    const rect = stage.getBoundingClientRect();
+    const plot = currentPlotRect();
+    const x = (clientX - rect.left) * state.dpr;
+    const plotW = Math.max(1, plot.right - plot.left);
+    const rel = clamp((x - plot.left) / plotW, 0, 1);
+    const span = state.view.t1 - state.view.t0;
+    const center = state.view.t0 + rel * span;
+    const fullSpan = state.points[state.points.length - 1].t - state.points[0].t;
+    const nextSpan = clamp(span * factor, 3 * 24 * 60 * 60 * 1000, fullSpan || span);
+    const t0 = center - rel * nextSpan;
+
+    const all = viewForRange(state.points, "ALL");
+    const nt0 = clamp(t0, all.t0, all.t1 - nextSpan);
+    state.view = { t0: nt0, t1: nt0 + nextSpan };
+    state.range = "CUSTOM";
+    setRangeButtons();
+    draw();
+  };
+
+  const panByPx = (deltaPx) => {
+    if (!state.view || !state.points.length) return;
+    const plot = currentPlotRect();
+    const plotW = Math.max(1, plot.right - plot.left);
+    const span = state.view.t1 - state.view.t0;
+    const dt = (-deltaPx / plotW) * span;
+
+    const all = viewForRange(state.points, "ALL");
+    const nt0 = clamp(state.view.t0 + dt, all.t0, all.t1 - span);
+    state.view = { t0: nt0, t1: nt0 + span };
+    state.range = "CUSTOM";
+    setRangeButtons();
+    draw();
+  };
+
+  const onPointerMove = (e) => {
+    if (!stage || !state.view) return;
+    if (state.dragging) {
+      panByPx(e.clientX - state.dragging.x0);
+      state.dragging.x0 = e.clientX;
+      return;
+    }
+
+    const rect = stage.getBoundingClientRect();
+    const plot = currentPlotRect();
+    const x = (e.clientX - rect.left) * state.dpr;
+    const plotW = Math.max(1, plot.right - plot.left);
+    const rel = clamp((x - plot.left) / plotW, 0, 1);
+    const t = state.view.t0 + rel * (state.view.t1 - state.view.t0);
+    const pts = visiblePoints();
+    const idx = nearestIndexByTime(pts, t);
+    state.hoverIndex = idx >= 0 ? idx : null;
+    draw();
+  };
+
+  const onPointerLeave = () => {
+    state.hoverIndex = null;
+    draw();
+  };
+
+  const onPointerDown = (e) => {
+    if (!stage) return;
+    stage.setPointerCapture?.(e.pointerId);
+    state.dragging = { x0: e.clientX };
+  };
+
+  const onPointerUp = (e) => {
+    if (!stage) return;
+    stage.releasePointerCapture?.(e.pointerId);
+    state.dragging = null;
+  };
+
+  const onWheel = (e) => {
+    if (!stage) return;
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 0.88 : 1.14;
+    zoomAtX(e.clientX, factor);
+  };
+
+  const onKeyDown = (e) => {
+    if (!state.view) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      panByPx(80);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      panByPx(-80);
+    } else if (e.key === "+" || e.key === "=") {
+      e.preventDefault();
+      zoomAtX(stage.getBoundingClientRect().left + stage.getBoundingClientRect().width / 2, 0.9);
+    } else if (e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      zoomAtX(stage.getBoundingClientRect().left + stage.getBoundingClientRect().width / 2, 1.12);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      state.hoverIndex = null;
+      draw();
+    }
+  };
+
+  const download = (name, content, type) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const downloadPNG = () => {
+    if (!canvas) return;
+    const url = canvas.toDataURL("image/png");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `portfoy-grafik-${todayKey()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const downloadCSV = () => {
+    const pts = visiblePoints();
+    if (!pts.length) return;
+    const rows = [["day", "twr_pct", "value", "day_return_pct"]];
+    for (const p of pts) {
+      rows.push([
+        String(p.day),
+        Number.isFinite(Number(p.pct)) ? String(round2(Number(p.pct))) : "",
+        Number.isFinite(Number(p.value)) ? String(round2(Number(p.value))) : "",
+        Number.isFinite(Number(p.dayReturnPct)) ? String(round2(Number(p.dayReturnPct))) : "",
+      ]);
+    }
+    const csv = rows.map((r) => r.map((x) => `"${String(x).replaceAll('"', '""')}"`).join(",")).join("\n") + "\n";
+    download(`portfoy-grafik-${todayKey()}.csv`, csv, "text/csv;charset=utf-8");
+  };
+
+  container.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("button");
+    if (!btn) return;
+
+    const metric = btn.dataset?.metric;
+    if (metric) return setMetric(metric);
+
+    const range = btn.dataset?.range;
+    if (range) return setRange(range);
+
+    const action = btn.dataset?.action;
+    if (action === "download-png") downloadPNG();
+    if (action === "download-csv") downloadCSV();
+  });
+
+  if (stage) {
+    stage.addEventListener("pointermove", onPointerMove);
+    stage.addEventListener("pointerleave", onPointerLeave);
+    stage.addEventListener("pointerdown", onPointerDown);
+    stage.addEventListener("pointerup", onPointerUp);
+    stage.addEventListener("pointercancel", onPointerUp);
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    stage.addEventListener("keydown", onKeyDown);
+  }
+
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => resize()) : null;
+  if (ro && stage) ro.observe(stage);
+
+  const widget = { setData, setMetric, setRange, setStatus, resize };
+  CHART_WIDGETS.set(container, widget);
+
+  setMetricButtons();
+  setRangeButtons();
+  resize();
+  return widget;
+}
+
+function renderTWRChart(points, { container, meta, errors } = {}) {
+  if (!container) return;
+  const list = Array.isArray(points) ? points : [];
+  const widget = ensureTwrChartWidget(container);
+
+  if (errors && Object.keys(errors).length) {
+    const bad = Object.entries(errors)
+      .slice(0, 6)
+      .map(([t, msg]) => `${t}: ${msg}`)
+      .join(" • ");
+    if (meta) meta.textContent = `Grafik verisi: ${bad}`;
+  } else if (meta) {
+    meta.textContent = "";
+  }
+
+  if (list.length < 2) {
+    widget.setData([]);
+    widget.setStatus("Grafik için yeterli veri yok veya sunucu kapalı. Yerel sunucu: py -3 server.py 8000 veya node server.mjs");
+    return;
+  }
+
+  widget.setStatus("");
+  widget.setData(list);
+}
+
+async function updateChart(positions) {
+  const container = document.getElementById("twr-chart");
+  const meta = document.getElementById("twr-meta");
+  if (!container) return;
+
+  const widget = ensureTwrChartWidget(container);
+  const tickers = tickersFromPositionsList(positions);
+  if (!tickers.length) {
+    widget.setData([]);
+    widget.setStatus("Grafik için veri yok.");
+    if (meta) meta.textContent = "";
+    return;
+  }
+
+  const start = minBuyDateKey(positions);
+  const end = todayKey();
+
+  if (STATE.history.pending) {
+    try {
+      STATE.history.pending.abort();
+    } catch {
+      // ignore
+    }
+  }
+
+  const controller = new AbortController();
+  STATE.history.pending = controller;
+
+  widget.setStatus("Grafik yükleniyor...");
+
+  try {
+    await ensureHistory(tickers, { start, end, signal: controller.signal });
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    const hint = msg.includes("HTTP 404")
+      ? "Bu sunucuda /api/history yok. `py -3 server.py 8000` veya `node server.mjs` ile açıp sayfayı yenile."
+      : msg;
+    widget.setData([]);
+    widget.setStatus(`Grafik yüklenemedi: ${hint}`);
+    if (meta) meta.textContent = "";
+    return;
+  } finally {
+    if (STATE.history.pending === controller) STATE.history.pending = null;
+  }
+
+  const points = computeTWRSeries(positions, STATE.history.series, { liveQuotes: STATE.quotes });
+  renderTWRChart(points, { container, meta, errors: STATE.history.errors });
+}
+
+function scheduleChartUpdate(positions) {
+  STATE.ui.lastChartPositions = positions;
+  if (STATE.ui.chartScheduled) return;
+  STATE.ui.chartScheduled = true;
+
+  window.requestAnimationFrame(() => {
+    STATE.ui.chartScheduled = false;
+    updateChart(STATE.ui.lastChartPositions || []);
+  });
+}
+
+function buildSummary(positions) {
+  const open = positions.filter((p) => !p.sellDate);
+  const closed = positions.filter((p) => p.sellDate);
+
+  const activeAgg = open.reduce(
+    (acc, p) => {
+      const rr = calcRiskReward(p);
+      return {
+        invested: acc.invested + (Number(rr.invested) || 0),
+        riskTL: acc.riskTL + (Number(rr.riskTL) || 0),
+        rewardTL: acc.rewardTL + (Number(rr.rewardTL) || 0),
+      };
+    },
+    { invested: 0, riskTL: 0, rewardTL: 0 }
+  );
+
+  const activeRiskPct = activeAgg.invested ? (activeAgg.riskTL / activeAgg.invested) * 100 : null;
+  const activeRewardPct = activeAgg.invested ? (activeAgg.rewardTL / activeAgg.invested) * 100 : null;
+  const activeRR = activeAgg.riskTL > 0 ? activeAgg.rewardTL / activeAgg.riskTL : null;
+
+  const realizedPnL = closed.reduce(
+    (acc, p) => {
+      const exitP = exitPriceFromOutcome(p);
+      if (exitP == null || !Number.isFinite(exitP)) return acc;
+      const { pnlTL, invested } = calcPnL(p, exitP);
+      return {
+        pnlTL: acc.pnlTL + (Number(pnlTL) || 0),
+        invested: acc.invested + (Number(invested) || 0),
+      };
+    },
+    { pnlTL: 0, invested: 0 }
+  );
+  const realizedPct = realizedPnL.invested ? (realizedPnL.pnlTL / realizedPnL.invested) * 100 : null;
+
+  const closedClassified = closed
+    .map((p) => outcomeLabel(p))
+    .filter((x) => x === OUTCOME.good || x === OUTCOME.bad);
+  const wins = closedClassified.filter((x) => x === OUTCOME.good).length;
+  const losses = closedClassified.filter((x) => x === OUTCOME.bad).length;
+  const winRate = wins + losses ? (wins / (wins + losses)) * 100 : null;
+
+  const liveAgg = open.reduce(
+    (acc, p) => {
+      const quote = STATE.quotes?.[String(p.symbol ?? "")];
+      const price = Number(quote?.price);
+      const changeAbs = Number(quote?.changeAbs);
+      const qty = approxQuantity(p?.total, p?.unitCost);
+      const unitCost = Number(p?.unitCost);
+
+      if (qty == null || !Number.isFinite(unitCost) || !Number.isFinite(price)) return acc;
+
+      const marketValue = qty * price;
+      const unreal = qty * (price - unitCost);
+      const day = Number.isFinite(changeAbs) ? qty * changeAbs : null;
+
+      return {
+        marketValue: acc.marketValue + marketValue,
+        unrealized: acc.unrealized + unreal,
+        dayChange: acc.dayChange + (Number(day) || 0),
+        priced: acc.priced + 1,
+      };
+    },
+    { marketValue: 0, unrealized: 0, dayChange: 0, priced: 0 }
+  );
+
+  const hasLive = liveAgg.priced > 0;
+  const dayBaseValue = hasLive ? liveAgg.marketValue - liveAgg.dayChange : null;
+  const dayChangePct = dayBaseValue ? (liveAgg.dayChange / dayBaseValue) * 100 : null;
+
+  renderHero({
+    activeTL: activeAgg.invested,
+    currentTL: hasLive ? liveAgg.marketValue : activeAgg.invested,
+    dayChangeTL: hasLive ? liveAgg.dayChange : null,
+    dayChangePct,
+    hasLive,
+  });
+
+  renderStatGrid(el.liveGrid, [
+    statHTML("Canlı Veri", `${liveAgg.priced}/${open.length}`, liveAgg.priced ? "good" : "warn"),
+    statHTML("Canlı Değer", hasLive ? formatTL(liveAgg.marketValue) : NA),
+    statHTML(
+      "Canlı P/L",
+      hasLive ? formatSignedTL(liveAgg.unrealized) : NA,
+      hasLive ? (liveAgg.unrealized > 0 ? "good" : liveAgg.unrealized < 0 ? "bad" : "warn") : "warn"
+    ),
+    statHTML(
+      "Günlük P/L",
+      hasLive ? formatSignedTL(liveAgg.dayChange) : NA,
+      hasLive ? (liveAgg.dayChange > 0 ? "good" : liveAgg.dayChange < 0 ? "bad" : "warn") : "warn"
+    ),
+    statHTML(
+      "Günlük Getiri",
+      hasLive ? formatSignedPct(dayChangePct) : NA,
+      hasLive ? (dayChangePct > 0 ? "good" : dayChangePct < 0 ? "bad" : "warn") : "warn"
+    ),
+  ]);
+
+  renderStatGrid(el.riskGrid, [
+    statHTML("Toplam Risk (SL)", formatSignedTL(-activeAgg.riskTL), activeAgg.riskTL > 0 ? "bad" : ""),
+    statHTML(
+      "Risk Oranı",
+      formatSignedPct(activeRiskPct == null ? null : -activeRiskPct),
+      activeRiskPct != null && activeRiskPct > 0 ? "bad" : ""
+    ),
+    statHTML("Potansiyel (TP)", formatSignedTL(activeAgg.rewardTL), activeAgg.rewardTL > 0 ? "good" : ""),
+    statHTML(
+      "Pot. Getiri",
+      formatSignedPct(activeRewardPct),
+      activeRewardPct != null && activeRewardPct > 0 ? "good" : ""
+    ),
+    statHTML(
+      "Risk/Ödül",
+      activeRR == null || !Number.isFinite(activeRR) ? NA : String(Math.round(activeRR * 100) / 100),
+      activeRR != null && activeRR >= 1 ? "good" : "warn"
+    ),
+  ]);
+
+  renderStatGrid(el.realizedGrid, [
+    statHTML("Gerçekleşen P/L", formatSignedTL(realizedPnL.pnlTL), realizedPnL.pnlTL >= 0 ? "good" : "bad"),
+    statHTML(
+      "Gerçekleşen Getiri",
+      formatSignedPct(realizedPct),
+      realizedPct != null && realizedPct >= 0 ? "good" : "bad"
+    ),
+    statHTML("Kazanma Oranı", formatPct(winRate), winRate != null && winRate >= 50 ? "good" : "warn"),
+  ]);
+
+  if (STATE.ui.mainTab === "chart") scheduleChartUpdate(positions);
+  return;
+
+  const groups = [
+    {
+      id: "general",
+      label: "Genel",
+      stats: [
+        statHTML("Toplam Pozisyon", String(positions.length)),
+        statHTML("Açık", String(open.length)),
+        statHTML("Kapalı", String(closed.length)),
+        statHTML("Aktif Tutar", formatTL(activeAgg.invested)),
+      ],
+    },
+    {
+      id: "live",
+      label: "Canlı",
+      stats: [
+        statHTML("Canlı Veri", `${liveAgg.priced}/${open.length}`, liveAgg.priced ? "good" : "warn"),
+        statHTML("Canlı Değer", hasLive ? formatTL(liveAgg.marketValue) : NA),
+        statHTML(
+          "Canlı P/L",
+          hasLive ? formatSignedTL(liveAgg.unrealized) : NA,
+          hasLive ? (liveAgg.unrealized > 0 ? "good" : liveAgg.unrealized < 0 ? "bad" : "warn") : "warn"
+        ),
+        statHTML(
+          "Günlük P/L",
+          hasLive ? formatSignedTL(liveAgg.dayChange) : NA,
+          hasLive ? (liveAgg.dayChange > 0 ? "good" : liveAgg.dayChange < 0 ? "bad" : "warn") : "warn"
+        ),
+        statHTML(
+          "Günlük Getiri",
+          hasLive ? formatSignedPct(dayChangePct) : NA,
+          hasLive ? (dayChangePct > 0 ? "good" : dayChangePct < 0 ? "bad" : "warn") : "warn"
+        ),
+      ],
+    },
+    {
+      id: "risk",
+      label: "Risk / Hedef",
+      stats: [
+        statHTML("Toplam Risk (SL)", formatSignedTL(-activeAgg.riskTL), activeAgg.riskTL > 0 ? "bad" : ""),
+        statHTML(
+          "Risk Oranı",
+          formatSignedPct(activeRiskPct == null ? null : -activeRiskPct),
+          activeRiskPct != null && activeRiskPct > 0 ? "bad" : ""
+        ),
+        statHTML("Potansiyel (TP)", formatSignedTL(activeAgg.rewardTL), activeAgg.rewardTL > 0 ? "good" : ""),
+        statHTML(
+          "Pot. Getiri",
+          formatSignedPct(activeRewardPct),
+          activeRewardPct != null && activeRewardPct > 0 ? "good" : ""
+        ),
+        statHTML(
+          "Risk/Ödül",
+          activeRR == null || !Number.isFinite(activeRR) ? NA : String(Math.round(activeRR * 100) / 100),
+          activeRR != null && activeRR >= 1 ? "good" : "warn"
+        ),
+      ],
+    },
+    {
+      id: "realized",
+      label: "Gerçekleşen",
+      stats: [
+        statHTML("Gerçekleşen P/L", formatSignedTL(realizedPnL.pnlTL), realizedPnL.pnlTL >= 0 ? "good" : "bad"),
+        statHTML(
+          "Gerçekleşen Getiri",
+          formatSignedPct(realizedPct),
+          realizedPct != null && realizedPct >= 0 ? "good" : "bad"
+        ),
+        statHTML("Kazanma Oranı", formatPct(winRate), winRate != null && winRate >= 50 ? "good" : "warn"),
+      ],
+    },
+    {
+      id: "chart",
+      label: "Grafik",
+      contentHTML: `<div class="chartMeta subtle" id="twr-meta"></div><div class="chart" id="twr-chart"></div>`,
+      stats: [],
+    },
+  ];
+
+  el.summary.innerHTML = summaryTabsHTML(groups);
+  if (STATE.ui.summaryTab === "chart") scheduleChartUpdate(positions);
+}
+
+function renderTables(items) {
+  const open = items.filter((p) => !p.sellDate);
+  const closed = items.filter((p) => p.sellDate);
+
+  open.sort((a, b) => {
+    const da = parseISODate(a.buyDate)?.getTime() ?? 0;
+    const db = parseISODate(b.buyDate)?.getTime() ?? 0;
+    if (db !== da) return db - da;
+    return String(a.symbol).localeCompare(String(b.symbol), "tr");
+  });
+
+  closed.sort((a, b) => {
+    const da = parseISODate(a.sellDate)?.getTime() ?? 0;
+    const db = parseISODate(b.sellDate)?.getTime() ?? 0;
+    if (db !== da) return db - da;
+    return String(a.symbol).localeCompare(String(b.symbol), "tr");
+  });
+
+  if (el.countOpen) el.countOpen.textContent = `${open.length} Pozisyon`;
+  if (el.countClosed) el.countClosed.textContent = `${closed.length} Pozisyon`;
+
+  if (el.tableOpen) el.tableOpen.innerHTML = tableHTML(open, { mode: "openCompact" });
+  if (el.tableLive) el.tableLive.innerHTML = tableHTML(open, { mode: "openLive" });
+  if (el.tableClosed) el.tableClosed.innerHTML = tableHTML(closed, { mode: "closed" });
+}
+
+function tableHTML(items, { mode }) {
+  if (mode === "openCompact") {
+    const header = `
+      <thead>
+        <tr>
+          <th class="sticky-col">Sembol</th>
+          <th class="left">Alış Tarihi</th>
+          <th>Maliyet</th>
+          <th>Adet</th>
+          <th>Tutar</th>
+          <th>Günlük %</th>
+          <th>Değer</th>
+        </tr>
+      </thead>
+    `;
+
+    if (!items.length) {
+      return (
+        header +
+        `
+          <tbody>
+            <tr>
+              <th class="sticky-col">${NA}</th>
+              <td class="unavailable" colspan="6">Kriterlere uyan pozisyon yok.</td>
+            </tr>
+          </tbody>
+        `
+      );
+    }
+
+    const rows = items
+      .map((p) => {
+        const qty = approxQuantity(p.total, p.unitCost);
+        const buy = formatDateTR(p.buyDate);
+        const symbol = String(p.symbol ?? NA);
+
+        const quote = STATE.quotes?.[symbol];
+        const livePrice = Number(quote?.price);
+        const liveChangePct = Number(quote?.changePct);
+        const liveValue = qty != null && Number.isFinite(livePrice) ? qty * livePrice : null;
+
+        const changeCls = liveChangePct > 0 ? "good" : liveChangePct < 0 ? "bad" : "warn";
+
+        return `
+          <tr>
+            <th class="sticky-col">${escapeHTML(symbol)}</th>
+            <td class="left">${escapeHTML(buy)}</td>
+            <td>${escapeHTML(formatTL(p.unitCost))}</td>
+            <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
+            <td>${escapeHTML(formatTL(p.total))}</td>
+            <td class="cell ${changeCls}">${escapeHTML(Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA)}</td>
+            <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    return `${header}<tbody>${rows}</tbody>`;
+  }
+
+  const isOpen = mode === "open" || mode === "openLive";
+  const header = isOpen
+    ? `
+      <thead>
+        <tr>
+          <th class="sticky-col">Sembol</th>
+          <th class="left">Alış Tarihi</th>
+          <th>Maliyet</th>
+          <th>Adet</th>
+          <th>Tutar</th>
+          <th>Canlı Fiyat</th>
+          <th>Günlük %</th>
+          <th>Değer</th>
+          <th>P/L (Canlı)</th>
+          <th>P/L %</th>
+          <th>Zarar Durdur</th>
+          <th>Kâr Al</th>
+          <th class="left">Durum</th>
+          <th class="left">Not</th>
+        </tr>
+      </thead>
+    `
+    : `
+      <thead>
+        <tr>
+          <th class="sticky-col">Sembol</th>
+          <th class="left">Alış - Satış</th>
+          <th>Maliyet</th>
+          <th class="left">Durum</th>
+          <th>Adet</th>
+          <th>Tutar</th>
+          <th>Zarar Durdur</th>
+          <th>Kar Al</th>
+          <th class="center">Son Durumu</th>
+          <th class="left">Not</th>
+        </tr>
+      </thead>
+    `;
+
+  if (!items.length) {
+    const colspan = isOpen ? 13 : 9;
+    return (
+      header +
+      `
+      <tbody>
+        <tr>
+          <th class="sticky-col">${NA}</th>
+          <td class="unavailable" colspan="${colspan}">Kriterlere uyan pozisyon yok.</td>
+        </tr>
+      </tbody>
+    `
+    );
+  }
+
+  const rows = items
+    .map((p) => {
+      const qty = approxQuantity(p.total, p.unitCost);
+      const buy = formatDateTR(p.buyDate);
+      const dateRange = `${buy} - ${p.sellDate ? formatDateTR(p.sellDate) : ""}`.trim();
+      const outcome = outcomeLabel(p);
+      const outcomeCls = outcomeClass(outcome);
+      const note = p.notes ?? NA;
+
+      const symbol = String(p.symbol ?? NA);
+      const quote = STATE.quotes?.[symbol];
+      const livePrice = Number(quote?.price);
+      const liveChangePct = Number(quote?.changePct);
+      const liveChangePctRounded = round2(liveChangePct);
+      const liveValue = qty != null && Number.isFinite(livePrice) ? qty * livePrice : null;
+      const unitCost = Number(p?.unitCost);
+      const unrealTL =
+        qty != null && Number.isFinite(livePrice) && Number.isFinite(unitCost) ? qty * (livePrice - unitCost) : null;
+      const unrealPct =
+        Number.isFinite(livePrice) && Number.isFinite(unitCost) && unitCost !== 0
+          ? ((livePrice / unitCost) - 1) * 100
+          : null;
+
+      const changeCls = liveChangePct > 0 ? "good" : liveChangePct < 0 ? "bad" : "warn";
+      const unrealCls = unrealTL > 0 ? "good" : unrealTL < 0 ? "bad" : "warn";
+
+      if (isOpen) {
+        const prevLiveChange = STATE.ui.lastLiveChangePctBySymbol[symbol];
+        const flashCls =
+          Number.isFinite(prevLiveChange) &&
+          Number.isFinite(liveChangePctRounded) &&
+          prevLiveChange !== liveChangePctRounded
+            ? liveChangePctRounded > prevLiveChange
+              ? "flash-up"
+              : "flash-down"
+            : "";
+        STATE.ui.lastLiveChangePctBySymbol[symbol] = liveChangePctRounded;
+
+        return `
+          <tr>
+            <th class="sticky-col">${escapeHTML(symbol)}</th>
+            <td class="left">${escapeHTML(buy)}</td>
+            <td>${escapeHTML(formatTL(p.unitCost))}</td>
+            <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
+            <td>${escapeHTML(formatTL(p.total))}</td>
+            <td>${escapeHTML(Number.isFinite(livePrice) ? formatTL(livePrice) : NA)}</td>
+            <td class="cell ${changeCls}${flashCls ? ` ${flashCls}` : ""}">${escapeHTML(
+              Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA
+            )}</td>
+            <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
+            <td class="cell ${unrealCls}">${escapeHTML(unrealTL == null ? NA : formatSignedTL(unrealTL))}</td>
+            <td class="cell ${unrealCls}">${escapeHTML(unrealPct == null ? NA : formatSignedPct(unrealPct))}</td>
+            <td>${escapeHTML(formatTL(p.stopLoss))}</td>
+            <td>${escapeHTML(formatTL(p.takeProfit))}</td>
+            <td class="left">${escapeHTML(p.status ?? NA)}</td>
+            <td class="unavailable left">${escapeHTML(note)}</td>
+          </tr>
+        `;
+      }
+
+      return `
+        <tr>
+          <th class="sticky-col">${escapeHTML(symbol)}</th>
+          <td class="left">${escapeHTML(dateRange)}</td>
+          <td>${escapeHTML(formatTL(p.unitCost))}</td>
+          <td class="left">${escapeHTML(p.status ?? NA)}</td>
+          <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
+          <td>${escapeHTML(formatTL(p.total))}</td>
+          <td>${escapeHTML(formatTL(p.stopLoss))}</td>
+          <td>${escapeHTML(formatTL(p.takeProfit))}</td>
+          <td class="cell ${outcomeCls} center">${escapeHTML(outcome)}</td>
+          <td class="unavailable left">${escapeHTML(note)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `${header}<tbody>${rows}</tbody>`;
+}
+
+function applyFilters() {
+  const qEl = document.getElementById("q");
+  const statusEl = document.getElementById("status");
+  const outcomeEl = document.getElementById("outcome");
+
+  const q = normalize(qEl?.value ?? "").trim();
+  const status = statusEl?.value ?? "";
+  const outcome = outcomeEl?.value ?? "";
+
+  const positions = STATE.data?.positions ?? [];
+  const filtered = positions.filter((p) => {
+    if (status && p.status !== status) return false;
+    if (outcome && outcomeLabel(p) !== outcome) return false;
+    if (q) {
+      const hay = normalize(`${p.symbol} ${p.notes ?? ""} ${p.status ?? ""} ${outcomeLabel(p)} ${p.outcome ?? ""}`);
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  STATE.filtered = filtered;
+  buildSummary(filtered);
+  renderTables(filtered);
+}
+
+async function loadData() {
+  const res = await fetch("data/portfolio.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`Veri okunamadı: ${res.status}`);
+  return res.json();
+}
+
+function loadFromLocalFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Dosya okunamadı."));
+    reader.onload = () => {
+      try {
+        resolve(JSON.parse(String(reader.result ?? "")));
+      } catch {
+        reject(new Error("JSON parse edilemedi."));
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function wire() {
+  if (STATE.ui.wired) return;
+  const filterEls = [document.getElementById("q"), document.getElementById("status"), document.getElementById("outcome")].filter(
+    Boolean
+  );
+  for (const input of filterEls) {
+    input.addEventListener("input", applyFilters);
+    input.addEventListener("change", applyFilters);
+  }
+
+  if (el.mainTabs) {
+    el.mainTabs.addEventListener("click", (e) => {
+      const btn = e.target?.closest?.('button[role="tab"][data-tab]');
+      if (!btn) return;
+      setMainTab(btn.dataset.tab);
+    });
+
+    el.mainTabs.addEventListener("keydown", (e) => {
+      const tab = e.target?.closest?.('button[role="tab"][data-tab]');
+      if (!tab) return;
+
+      const tabs = Array.from(el.mainTabs.querySelectorAll('button[role="tab"][data-tab]'));
+      const i = tabs.indexOf(tab);
+      if (i < 0) return;
+
+      let nextIndex = null;
+      if (e.key === "ArrowRight") nextIndex = (i + 1) % tabs.length;
+      else if (e.key === "ArrowLeft") nextIndex = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === "Home") nextIndex = 0;
+      else if (e.key === "End") nextIndex = tabs.length - 1;
+      else return;
+
+      e.preventDefault();
+      const nextTab = tabs[nextIndex];
+      setMainTab(nextTab.dataset.tab);
+      nextTab.focus();
+    });
+  }
+
+  setMainTab(STATE.ui.mainTab);
+  window.addEventListener("resize", () => syncMainTabIndicator());
+
+  STATE.ui.wired = true;
+}
+
+function updateLiveStatus() {
+  if (!el.liveStatus) return;
+  const state = STATE.live?.state ?? "idle";
+  const message = STATE.live?.message ?? "";
+  const lastUpdated = STATE.live?.lastUpdated;
+  const sourceAsOf = STATE.live?.sourceAsOf;
+
+  const dotClass = state === "ok" ? "good" : state === "error" ? "bad" : "warn";
+  const time =
+    lastUpdated instanceof Date && Number.isFinite(lastUpdated.getTime())
+      ? lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+  const sourceTime =
+    sourceAsOf instanceof Date && Number.isFinite(sourceAsOf.getTime())
+      ? sourceAsOf.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+
+  let text =
+    state === "ok"
+      ? `Canlı: Açık${time ? ` · ${time}` : ""}`
+      : state === "error"
+        ? `Canlı: Kapalı${message ? ` · ${message}` : ""}`
+        : "Canlı: Bekleniyor";
+
+  if (state === "ok" && sourceTime) text += ` | Kaynak ${sourceTime}`;
+
+  el.liveStatus.innerHTML = `<span class="dot ${dotClass}" aria-hidden="true"></span><span>${escapeHTML(
+    text
+  )}</span>`;
+}
+
+function updateLiveStatus() {
+  if (!el.liveStatus) return;
+  const state = STATE.live?.state ?? "idle";
+  const message = STATE.live?.message ?? "";
+  const lastUpdated = STATE.live?.lastUpdated;
+  const sourceAsOf = STATE.live?.sourceAsOf;
+
+  const dotClass = state === "ok" ? "good" : state === "error" ? "bad" : "warn";
+  const time =
+    lastUpdated instanceof Date && Number.isFinite(lastUpdated.getTime())
+      ? lastUpdated.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+  const sourceTime =
+    sourceAsOf instanceof Date && Number.isFinite(sourceAsOf.getTime())
+      ? sourceAsOf.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+
+  let text =
+    state === "ok"
+      ? `Canlı: Açık${time ? ` • ${time}` : ""}`
+      : state === "error"
+        ? `Canlı: Kapalı${message ? ` • ${message}` : ""}`
+        : "Canlı: Bekleniyor";
+
+  if (state === "ok" && sourceTime) text += ` • Kaynak ${sourceTime}`;
+
+  el.liveStatus.innerHTML = `<span class="dot ${dotClass}" aria-hidden="true"></span><span>${escapeHTML(text)}</span>`;
+}
+
+function tickersFromPositions() {
+  const positions = Array.isArray(STATE.data?.positions) ? STATE.data.positions : [];
+  const set = new Set();
+  for (const p of positions) {
+    const sym = String(p?.symbol ?? "").trim();
+    if (sym) set.add(sym.toUpperCase());
+  }
+  return Array.from(set);
+}
+
+async function refreshQuotes() {
+  const refresh = STATE.ui.quotesRefresh;
+  if (refresh.inFlight) return;
+  refresh.inFlight = true;
+
+  try {
+    const tickers = tickersFromPositions();
+    if (!tickers.length) return;
+
+    const lastBase =
+      typeof STATE.live?.apiBase === "string" && STATE.live.apiBase.trim() ? STATE.live.apiBase.trim() : null;
+
+    const proto = String(window.location?.protocol ?? "");
+    const isHttp = proto === "http:" || proto === "https:";
+
+    const bases = Array.from(
+      new Set(
+        [
+          lastBase,
+          isHttp ? "" : null,
+          "http://127.0.0.1:4173",
+          "http://localhost:4173",
+          "http://127.0.0.1:8000",
+          "http://localhost:8000",
+        ].filter((x) => typeof x === "string")
+      )
+    );
+
+    const prevApiBase = typeof STATE.live?.apiBase === "string" ? STATE.live.apiBase : "";
+
+    let lastErr = null;
+    for (const base of bases) {
+      try {
+        const prefix = base ? base.replace(/\/+$/, "") : "";
+        const url = `${prefix}/api/quotes?tickers=${encodeURIComponent(tickers.join(","))}`;
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), QUOTES_FETCH_TIMEOUT_MS);
+        let res;
+        try {
+          res = await fetch(url, { cache: "no-store", signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const quotes = json?.quotes && typeof json.quotes === "object" ? json.quotes : {};
+        const sourceAsOf = parseISODate(json?.asOf);
+
+        STATE.quotes = quotes;
+        STATE.live = { state: "ok", lastUpdated: new Date(), message: "", apiBase: prefix, sourceAsOf };
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    if (lastErr) {
+      const raw = String(lastErr?.message ?? lastErr);
+      const errName = typeof lastErr === "object" && lastErr ? String(lastErr.name ?? "") : "";
+      const isAbort = errName === "AbortError" || raw.includes("AbortError");
+
+      const msg = isAbort
+        ? "Zaman asimi"
+        : raw.includes("HTTP 404") || raw.includes("Failed to fetch")
+          ? "Sunucu yok"
+          : raw.replaceAll("\n", " ").trim();
+
+      STATE.live = {
+        state: "error",
+        lastUpdated: STATE.live?.lastUpdated ?? null,
+        message: msg,
+        apiBase: prevApiBase,
+        sourceAsOf: STATE.live?.sourceAsOf ?? null,
+      };
+    }
+
+    updateLiveStatus();
+    applyFilters();
+    if (STATE.ui.mainTab === "chart") scheduleChartUpdate(STATE.filtered || []);
+  } finally {
+    refresh.inFlight = false;
+  }
+}
+
+function startLiveQuotes() {
+  updateLiveStatus();
+
+  const refresh = STATE.ui.quotesRefresh;
+  if (refresh.timerId != null) window.clearTimeout(refresh.timerId);
+
+  const nextDelayMs = () => (STATE.live?.state === "ok" ? QUOTES_REFRESH_OK_MS : QUOTES_REFRESH_ERROR_MS);
+
+  const loop = async () => {
+    try {
+      await refreshQuotes();
+    } finally {
+      refresh.timerId = window.setTimeout(loop, nextDelayMs());
+    }
+  };
+
+  loop();
+}
+
+async function main() {
+  try {
+    STATE.data = await loadData();
+  } catch (err) {
+    el.notice.innerHTML = `
+        <div class="empty">
+          <div>Veri yüklenemedi.</div>
+          <div class="subtle" style="margin-top:8px">
+            Bazı tarayıcılar <code>file://</code> altında JSON <code>fetch</code> isteğini engeller.
+            Çözüm: <code>data/portfolio.json</code> dosyasını seç veya bir yerel sunucu ile aç (örn. <code>npx serve</code>).
+          </div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
+            <input id="pick" type="file" accept=".json,application/json" />
+          </div>
+        </div>
+      `;
+    if (el.meta) el.meta.textContent = String(err?.message ?? err);
+
+    const picker = document.getElementById("pick");
+    if (picker) {
+      picker.addEventListener("change", async () => {
+        const file = picker.files?.[0];
+        if (!file) return;
+        try {
+          STATE.data = await loadFromLocalFile(file);
+        } catch (e) {
+          if (el.meta) el.meta.textContent = String(e?.message ?? e);
+          return;
+        }
+
+        el.notice.innerHTML = "";
+        const positions = Array.isArray(STATE.data.positions) ? STATE.data.positions : [];
+        buildSummary(positions);
+        renderTables(positions);
+        wire();
+        applyFilters();
+        refreshQuotes();
+        if (el.meta) el.meta.textContent = `Dosyadan yüklendi: ${file.name} · Pozisyon: ${positions.length}`;
+      });
+    }
+
+    return;
+  }
+
+  const positions = Array.isArray(STATE.data.positions) ? STATE.data.positions : [];
+  wire();
+  STATE.filtered = positions;
+  applyFilters();
+  refreshQuotes();
+
+  const updatedAt = new Date();
+  if (el.meta) el.meta.textContent = `Son yükleme: ${updatedAt.toLocaleDateString("tr-TR")} · Pozisyon: ${positions.length}`;
+}
+
+main();
+startLiveQuotes();

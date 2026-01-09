@@ -1,0 +1,77 @@
+{
+  "currency": "TL",
+  "positions": [
+    {
+      "symbol": "FORTE",
+      "buyDate": "2026-01-05",
+      "sellDate": null,
+      "unitCost": 85.3,
+      "status": "Gerçekleşti",
+      "total": 3326.7,
+      "stopLoss": 78.58,
+      "takeProfit": 102.1,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "KAYSE",
+      "buyDate": "2026-01-05",
+      "sellDate": null,
+      "unitCost": 4.59,
+      "status": "Gerçekleşti",
+      "total": 3956.58,
+      "stopLoss": 4.28,
+      "takeProfit": 5.36,
+      "outcome": null,
+      "notes": "Ani Gelişme: Hisse bölündü, ort. maliyet ve diğer veriler ona göre güncellendi."
+    },
+    {
+      "symbol": "ALARK",
+      "buyDate": "2026-01-05",
+      "sellDate": null,
+      "unitCost": 105.7,
+      "status": "Gerçekleşti",
+      "total": 4862.2,
+      "stopLoss": 99.65,
+      "takeProfit": 119.78,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "EUPWR",
+      "buyDate": "2026-01-05",
+      "sellDate": null,
+      "unitCost": 33.6,
+      "status": "Gerçekleşti",
+      "total": 3662.4,
+      "stopLoss": 31.28,
+      "takeProfit": 39.98,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "AHSGY",
+      "buyDate": "2026-01-07",
+      "sellDate": null,
+      "unitCost": 18.48,
+      "status": "Gerçekleşti",
+      "total": 2217.6,
+      "stopLoss": 16.19,
+      "takeProfit": 24.08,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "RYGYO",
+      "buyDate": "2026-01-07",
+      "sellDate": null,
+      "unitCost": 23.98,
+      "status": "Gerçekleşti",
+      "total": 3573.02,
+      "stopLoss": 22.16,
+      "takeProfit": 28.52,
+      "outcome": null,
+      "notes": null
+    }
+  ]
+}

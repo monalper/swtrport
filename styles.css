@@ -71,6 +71,7 @@ code {
   max-width: 980px;
   margin: 0 auto;
   padding: 92px 18px 54px;
+  min-height: 100vh;
 }
 
 .subtle {
@@ -795,6 +796,38 @@ tbody tr td.flash-down {
 .footer {
   margin-top: 18px;
   font-size: 12px;
+}
+
+.siteHeader {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.siteHeaderArt {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+
+.siteFooter {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.siteFooterArt {
+  width: 100%;
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 @media (max-width: 900px) {

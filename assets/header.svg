@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1920" height="62" viewBox="0 0 1920 62">
+  <defs>
+    <clipPath id="clip-Header">
+      <rect width="1920" height="62"/>
+    </clipPath>
+  </defs>
+  <g id="Header" clip-path="url(#clip-Header)">
+    <rect id="Rectangle_2" data-name="Rectangle 2" width="1920" height="58" fill="#3b3b3f"/>
+    <text id="Openwall_Finance" data-name="Openwall Finance" transform="translate(884 36)" fill="#7f7f87" font-size="19" font-family="InterTight-Bold, Inter Tight" font-weight="700"><tspan x="0" y="0">Openwall </tspan><tspan y="0" font-family="InterTight-Medium, Inter Tight" font-weight="500">Finance</tspan></text>
+    <rect id="Rectangle_3" data-name="Rectangle 3" width="1920" height="29" transform="translate(0 58)" fill="#8596ff"/>
+  </g>
+</svg>

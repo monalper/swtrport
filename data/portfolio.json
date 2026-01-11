@@ -72,6 +72,19 @@
       "takeProfit": 28.52,
       "outcome": null,
       "notes": null
-    }
+    },
+    {
+      "symbol": "OFSYM",
+      "buyDate": "2026-01-12",
+      "sellDate": null,
+      "unitCost": 74.00,
+      "status": "İletilecek",
+      "total": 3626.00,
+      "stopLoss": 68.53,
+      "takeProfit": 87.68,
+      "outcome": null,
+      "notes": null
+    },
+    
   ]
 }

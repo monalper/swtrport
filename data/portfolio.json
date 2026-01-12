@@ -64,13 +64,13 @@
     {
       "symbol": "RYGYO",
       "buyDate": "2026-01-07",
-      "sellDate": null,
+      "sellDate": "2026-01-12",
       "unitCost": 23.98,
       "status": "Gerçekleşti",
       "total": 3573.02,
-      "stopLoss": 22.16,
-      "takeProfit": 28.52,
-      "outcome": null,
+      "stopLoss": 23.75,
+      "takeProfit": 24.42,
+      "outcome": 1,
       "notes": null
     },
     {
@@ -82,6 +82,30 @@
       "total": 3626.00,
       "stopLoss": 68.53,
       "takeProfit": 87.68,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "LILAK",
+      "buyDate": "2026-01-13",
+      "sellDate": null,
+      "unitCost": 31.28,
+      "status": "İletilecek",
+      "total": 3910.00,
+      "stopLoss": 29.13,
+      "takeProfit": 36.66,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "GESAN",
+      "buyDate": "2026-01-13",
+      "sellDate": null,
+      "unitCost": 49.88,
+      "status": "İletilecek",
+      "total": 4439.32,
+      "stopLoss": 46.86,
+      "takeProfit": 57.43,
       "outcome": null,
       "notes": null
     }

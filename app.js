@@ -2766,14 +2766,25 @@ async function exportPortfolioPDF() {
     const THEME = {
       ink: "#0f172a",
       muted: "#475569",
-      line: "#e2e8f0",
-      soft: "#f8fafc",
-      headerFill: "#eef2ff",
-      zebra: "#fbfdff",
+      line: "#e5e7eb",
+      soft: "#f9fafb",
+      headerFill: "#f3f4f6",
+      zebra: "#fafafa",
       accent: "#ff0000",
+      bannerBg: "#ff0000",
+      bannerText: "#ffffff",
+      bannerRule: "rgba(255, 255, 255, 0.35)",
       good: "#0f766e",
       bad: "#b91c1c",
     };
+
+    const BANNER = {
+      height: 52,
+      leftMargin: 28,
+      logoWidth: 78,
+      logoGap: 14,
+    };
+    const bannerRuleStartX = BANNER.leftMargin + BANNER.logoWidth + BANNER.logoGap;
 
     const signedColorFor = (val) => {
       const s = String(val ?? "").trim();
@@ -2885,7 +2896,6 @@ async function exportPortfolioPDF() {
         th("SL", { alignment: "right" }),
         th("TP", { alignment: "right" }),
         th("Durum"),
-        th("Not"),
       ],
     ];
 
@@ -2914,7 +2924,6 @@ async function exportPortfolioPDF() {
         td(formatTL(p?.stopLoss), { alignment: "right" }),
         td(formatTL(p?.takeProfit), { alignment: "right" }),
         td(String(p?.status ?? NA)),
-        td(String(p?.notes ?? ""), { style: "tdNote" }),
       ]);
     }
 
@@ -2933,7 +2942,6 @@ async function exportPortfolioPDF() {
         th("SL", { alignment: "right" }),
         th("TP", { alignment: "right" }),
         th("Durum"),
-        th("Not"),
       ],
     ];
 
@@ -2957,7 +2965,6 @@ async function exportPortfolioPDF() {
         td(formatTL(p?.stopLoss), { alignment: "right" }),
         td(formatTL(p?.takeProfit), { alignment: "right" }),
         td(String(p?.status ?? NA)),
-        td(String(p?.notes ?? ""), { style: "tdNote" }),
       ]);
     }
 
@@ -3046,6 +3053,7 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
     };
 
     const logoSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdflogo.svg")) ?? PDF_LOGO_SVG_FALLBACK);
+    const bannerLogoSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdfbannerlogo.svg")) ?? "") || logoSvg;
     const closeSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdfclose.svg")) ?? PDF_CLOSE_SVG_FALLBACK);
     const watermarkSvgRaw = sanitizeSvgForPdf(await loadSvgText("assets/watermark.svg"));
     const watermarkSvg = watermarkSvgRaw ? ensureSvgOpacity(watermarkSvgRaw, 0.035) : null;
@@ -3071,15 +3079,23 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
         tdSymbol: { bold: true },
         tdOutcome: { bold: true },
         tdNote: { fontSize: 7, color: THEME.muted },
+        bannerTitle: { fontSize: 10, color: THEME.bannerText, bold: true },
+        bannerMeta: { fontSize: 8, color: THEME.bannerText },
       },
       background: (currentPage, pageSize) => ({
         stack: [
           currentPage !== 1
             ? {
                 canvas: [
-                  { type: "rect", x: 0, y: 0, w: pageSize.width, h: 52, color: THEME.soft },
-                  { type: "rect", x: 0, y: 52, w: pageSize.width, h: 1, color: THEME.line },
-                  { type: "rect", x: 0, y: 52, w: 150, h: 2, color: THEME.accent },
+                  { type: "rect", x: 0, y: 0, w: pageSize.width, h: BANNER.height, color: THEME.bannerBg },
+                  {
+                    type: "rect",
+                    x: bannerRuleStartX,
+                    y: BANNER.height,
+                    w: Math.max(0, pageSize.width - bannerRuleStartX),
+                    h: 1,
+                    color: THEME.bannerRule,
+                  },
                 ],
               }
             : null,
@@ -3098,12 +3114,12 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
         return {
           margin: [28, 16, 28, 0],
           columns: [
-            logoSvg ? { svg: logoSvg, width: 78 } : { text: "Openwall Finance", style: "subtitle" },
+            bannerLogoSvg ? { svg: bannerLogoSvg, width: 78 } : { text: "Openwall Finance", style: "bannerTitle" },
             {
               width: "*",
               stack: [
-                { text: "PORTFÖY RAPORU", style: "subtitle", alignment: "right" },
-                { text: `Rapor No: ${reportId}`, style: "small", alignment: "right" },
+                { text: "PORTFÖY RAPORU", style: "bannerTitle", alignment: "right" },
+                { text: `Rapor No: ${reportId}`, style: "bannerMeta", alignment: "right" },
               ],
             },
           ],
@@ -3169,7 +3185,7 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
         {
           table: {
             headerRows: 1,
-            widths: [40, 44, 44, 32, 40, 40, 34, 40, 40, 34, 32, 32, 46, "*"],
+            widths: [46, 52, 52, 34, 52, 52, 44, 58, 58, 44, 44, 44, "*"],
             body: openBody,
           },
           layout: layoutTable,
@@ -3179,7 +3195,7 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
         {
           table: {
             headerRows: 1,
-            widths: [40, 44, 44, 44, 32, 40, 36, 44, 40, 34, 32, 32, 46, "*"],
+            widths: [46, 52, 52, 52, 34, 52, 52, 60, 58, 44, 44, 44, "*"],
             body: closedBody,
           },
           layout: layoutTable,

@@ -28,13 +28,13 @@
     {
       "symbol": "ALARK",
       "buyDate": "2026-01-05",
-      "sellDate": null,
+      "sellDate": "2026-01-12",
       "unitCost": 105.7,
       "status": "Gerçekleşti",
       "total": 4862.2,
       "stopLoss": 99.65,
       "takeProfit": 119.78,
-      "outcome": null,
+      "outcome": 0,
       "notes": null
     },
     {

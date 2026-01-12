@@ -2763,6 +2763,88 @@ async function exportPortfolioPDF() {
     const smoney = (x) => (x == null ? NA : formatSignedTL(x));
     const spct = (x) => (x == null ? NA : formatSignedPct(x));
 
+    const THEME = {
+      ink: "#0f172a",
+      muted: "#475569",
+      line: "#e2e8f0",
+      soft: "#f8fafc",
+      headerFill: "#eef2ff",
+      zebra: "#fbfdff",
+      accent: "#ff0000",
+      good: "#0f766e",
+      bad: "#b91c1c",
+    };
+
+    const signedColorFor = (val) => {
+      const s = String(val ?? "").trim();
+      if (s.startsWith("+")) return THEME.good;
+      if (s.startsWith("-")) return THEME.bad;
+      return THEME.ink;
+    };
+
+    const th = (text, { alignment = "left" } = {}) => ({ text: String(text), style: "th", alignment });
+    const td = (text, { alignment = "left", color, style } = {}) => ({
+      text: String(text ?? NA),
+      alignment,
+      color: color ?? THEME.ink,
+      style,
+    });
+    const tdSigned = (text, { alignment = "right", style } = {}) =>
+      td(text, { alignment, style, color: signedColorFor(text) });
+
+    const outcomeColorFor = (label) => {
+      if (label === OUTCOME.good) return THEME.good;
+      if (label === OUTCOME.bad) return THEME.bad;
+      return THEME.ink;
+    };
+
+    const kvRow = (k, v, { signed } = {}) => [
+      { text: String(k), style: "kvKey" },
+      {
+        text: String(v ?? NA),
+        style: "kvVal",
+        alignment: "right",
+        color: signed ? signedColorFor(v) : THEME.ink,
+      },
+    ];
+
+    const layoutCard = {
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0.8 : 0),
+      vLineWidth: (i, node) => (i === 0 || i === node.table.widths.length ? 0.8 : 0),
+      hLineColor: () => THEME.line,
+      vLineColor: () => THEME.line,
+      paddingLeft: () => 10,
+      paddingRight: () => 10,
+      paddingTop: () => 8,
+      paddingBottom: () => 8,
+      fillColor: () => THEME.soft,
+    };
+
+    const layoutTable = {
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0.8 : 0.5),
+      vLineWidth: () => 0,
+      hLineColor: () => THEME.line,
+      paddingLeft: () => 6,
+      paddingRight: () => 6,
+      paddingTop: () => 4,
+      paddingBottom: () => 4,
+      fillColor: (rowIndex) => {
+        if (rowIndex === 0) return THEME.headerFill;
+        return rowIndex % 2 ? THEME.zebra : null;
+      },
+    };
+
+    const layoutKeyValue = {
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0.8 : 0.5),
+      vLineWidth: () => 0,
+      hLineColor: () => THEME.line,
+      paddingLeft: () => 8,
+      paddingRight: () => 8,
+      paddingTop: () => 5,
+      paddingBottom: () => 5,
+      fillColor: (rowIndex) => (rowIndex % 2 ? THEME.zebra : null),
+    };
+
     const summaryRows = [
       kv("Oluşturma", ts),
       kv("Para birimi", getCurrency()),
@@ -2790,20 +2872,20 @@ async function exportPortfolioPDF() {
 
     const openBody = [
       [
-        { text: "Sembol", style: "th" },
-        { text: "Alış", style: "th" },
-        { text: "Maliyet", style: "th" },
-        { text: "Adet", style: "th" },
-        { text: "Tutar", style: "th" },
-        { text: "Canlı", style: "th" },
-        { text: "Gün %", style: "th" },
-        { text: "Değer", style: "th" },
-        { text: "P/L", style: "th" },
-        { text: "P/L %", style: "th" },
-        { text: "SL", style: "th" },
-        { text: "TP", style: "th" },
-        { text: "Durum", style: "th" },
-        { text: "Not", style: "th" },
+        th("Sembol"),
+        th("Alış"),
+        th("Maliyet", { alignment: "right" }),
+        th("Adet", { alignment: "right" }),
+        th("Tutar", { alignment: "right" }),
+        th("Canlı", { alignment: "right" }),
+        th("Gün %", { alignment: "right" }),
+        th("Değer", { alignment: "right" }),
+        th("P/L", { alignment: "right" }),
+        th("P/L %", { alignment: "right" }),
+        th("SL", { alignment: "right" }),
+        th("TP", { alignment: "right" }),
+        th("Durum"),
+        th("Not"),
       ],
     ];
 
@@ -2819,39 +2901,39 @@ async function exportPortfolioPDF() {
       const pnlPct = Number.isFinite(livePrice) && Number.isFinite(unitCost) && unitCost !== 0 ? ((livePrice / unitCost) - 1) * 100 : null;
 
       openBody.push([
-        symbol,
-        formatDateTR(p?.buyDate),
-        formatTL(p?.unitCost),
-        qty == null ? NA : String(qty),
-        formatTL(p?.total),
-        Number.isFinite(livePrice) ? formatTL(livePrice) : NA,
-        Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA,
-        liveValue == null ? NA : formatTL(liveValue),
-        pnlTL == null ? NA : formatSignedTL(pnlTL),
-        pnlPct == null ? NA : formatSignedPct(pnlPct),
-        formatTL(p?.stopLoss),
-        formatTL(p?.takeProfit),
-        String(p?.status ?? NA),
-        String(p?.notes ?? ""),
+        td(symbol, { style: "tdSymbol" }),
+        td(formatDateTR(p?.buyDate)),
+        td(formatTL(p?.unitCost), { alignment: "right" }),
+        td(qty == null ? NA : String(qty), { alignment: "right" }),
+        td(formatTL(p?.total), { alignment: "right" }),
+        td(Number.isFinite(livePrice) ? formatTL(livePrice) : NA, { alignment: "right" }),
+        tdSigned(Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA, { alignment: "right" }),
+        td(liveValue == null ? NA : formatTL(liveValue), { alignment: "right" }),
+        tdSigned(pnlTL == null ? NA : formatSignedTL(pnlTL), { alignment: "right" }),
+        tdSigned(pnlPct == null ? NA : formatSignedPct(pnlPct), { alignment: "right" }),
+        td(formatTL(p?.stopLoss), { alignment: "right" }),
+        td(formatTL(p?.takeProfit), { alignment: "right" }),
+        td(String(p?.status ?? NA)),
+        td(String(p?.notes ?? ""), { style: "tdNote" }),
       ]);
     }
 
     const closedBody = [
       [
-        { text: "Sembol", style: "th" },
-        { text: "Alış", style: "th" },
-        { text: "Satış", style: "th" },
-        { text: "Maliyet", style: "th" },
-        { text: "Adet", style: "th" },
-        { text: "Tutar", style: "th" },
-        { text: "Çıkış", style: "th" },
-        { text: "Son durum", style: "th" },
-        { text: "P/L", style: "th" },
-        { text: "P/L %", style: "th" },
-        { text: "SL", style: "th" },
-        { text: "TP", style: "th" },
-        { text: "Durum", style: "th" },
-        { text: "Not", style: "th" },
+        th("Sembol"),
+        th("Alış"),
+        th("Satış"),
+        th("Maliyet", { alignment: "right" }),
+        th("Adet", { alignment: "right" }),
+        th("Tutar", { alignment: "right" }),
+        th("Çıkış", { alignment: "right" }),
+        th("Son durum"),
+        th("P/L", { alignment: "right" }),
+        th("P/L %", { alignment: "right" }),
+        th("SL", { alignment: "right" }),
+        th("TP", { alignment: "right" }),
+        th("Durum"),
+        th("Not"),
       ],
     ];
 
@@ -2862,20 +2944,20 @@ async function exportPortfolioPDF() {
       const { pnlTL, pnlPct } = calcPnL(p, exit);
       const outcome = outcomeLabel(p);
       closedBody.push([
-        symbol,
-        formatDateTR(p?.buyDate),
-        formatDateTR(p?.sellDate),
-        formatTL(p?.unitCost),
-        qty == null ? NA : String(qty),
-        formatTL(p?.total),
-        exit == null ? NA : formatTL(exit),
-        outcome,
-        pnlTL == null ? NA : formatSignedTL(pnlTL),
-        pnlPct == null ? NA : formatSignedPct(pnlPct),
-        formatTL(p?.stopLoss),
-        formatTL(p?.takeProfit),
-        String(p?.status ?? NA),
-        String(p?.notes ?? ""),
+        td(symbol, { style: "tdSymbol" }),
+        td(formatDateTR(p?.buyDate)),
+        td(formatDateTR(p?.sellDate)),
+        td(formatTL(p?.unitCost), { alignment: "right" }),
+        td(qty == null ? NA : String(qty), { alignment: "right" }),
+        td(formatTL(p?.total), { alignment: "right" }),
+        td(exit == null ? NA : formatTL(exit), { alignment: "right" }),
+        td(outcome, { style: "tdOutcome", color: outcomeColorFor(outcome) }),
+        tdSigned(pnlTL == null ? NA : formatSignedTL(pnlTL), { alignment: "right" }),
+        tdSigned(pnlPct == null ? NA : formatSignedPct(pnlPct), { alignment: "right" }),
+        td(formatTL(p?.stopLoss), { alignment: "right" }),
+        td(formatTL(p?.takeProfit), { alignment: "right" }),
+        td(String(p?.status ?? NA)),
+        td(String(p?.notes ?? ""), { style: "tdNote" }),
       ]);
     }
 
@@ -2955,43 +3037,87 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
       return s;
     };
 
+    const ensureSvgOpacity = (svgText, opacity) => {
+      const s = String(svgText ?? "");
+      return s.replace(/<svg\b([^>]*)>/i, (m, attrs) => {
+        if (/\sopacity\s*=/.test(attrs)) return m;
+        return `<svg${attrs} opacity="${opacity}">`;
+      });
+    };
+
     const logoSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdflogo.svg")) ?? PDF_LOGO_SVG_FALLBACK);
     const closeSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdfclose.svg")) ?? PDF_CLOSE_SVG_FALLBACK);
+    const watermarkSvgRaw = sanitizeSvgForPdf(await loadSvgText("assets/watermark.svg"));
+    const watermarkSvg = watermarkSvgRaw ? ensureSvgOpacity(watermarkSvgRaw, 0.035) : null;
     const hasClosePage = !!closeSvg;
+    const reportId = `SWP-${todayKey()}-${String(now.getTime()).slice(-6)}`;
+    const reportOwner = String(STATE.data?.owner ?? STATE.data?.ownerName ?? "").trim();
+    const ownerLine = reportOwner ? `${reportOwner} adına hazırlanmıştır.` : "Kişisel kullanım için hazırlanmıştır.";
 
     const docDefinition = {
       pageSize: "A4",
-      pageMargins: [28, 54, 28, 38],
+      pageMargins: [28, 62, 28, 44],
       info: { title: "Portföy Raporu", author: "SWPort", subject: "Portföy Raporu" },
-      defaultStyle: { font: "Roboto", fontSize: 10, color: "#111111" },
+      defaultStyle: { font: "Roboto", fontSize: 10, color: THEME.ink },
       styles: {
-        title: { fontSize: 16, bold: true, color: "#111111" },
-        subtitle: { fontSize: 10, color: "#444444" },
-        h2: { fontSize: 11, bold: true, margin: [0, 12, 0, 6] },
-        th: { bold: true, fontSize: 8, color: "#111111" },
-        kvKey: { bold: true, fontSize: 9, color: "#333333" },
-        kvVal: { fontSize: 9, color: "#111111" },
-        small: { fontSize: 8, color: "#444444" },
-        mono: { fontSize: 7, color: "#222222" },
+        title: { fontSize: 18, bold: true, color: THEME.ink },
+        subtitle: { fontSize: 10, color: THEME.muted },
+        h2: { fontSize: 11, bold: true, color: THEME.ink, margin: [0, 14, 0, 6] },
+        th: { bold: true, fontSize: 8, color: THEME.ink },
+        kvKey: { bold: true, fontSize: 9, color: THEME.muted },
+        kvVal: { fontSize: 9, color: THEME.ink },
+        small: { fontSize: 8, color: THEME.muted },
+        mono: { fontSize: 7, color: THEME.ink },
+        tdSymbol: { bold: true },
+        tdOutcome: { bold: true },
+        tdNote: { fontSize: 7, color: THEME.muted },
       },
+      background: (currentPage, pageSize) => ({
+        stack: [
+          currentPage !== 1
+            ? {
+                canvas: [
+                  { type: "rect", x: 0, y: 0, w: pageSize.width, h: 52, color: THEME.soft },
+                  { type: "rect", x: 0, y: 52, w: pageSize.width, h: 1, color: THEME.line },
+                  { type: "rect", x: 0, y: 52, w: 150, h: 2, color: THEME.accent },
+                ],
+              }
+            : null,
+          watermarkSvg
+            ? {
+                svg: watermarkSvg,
+                width: 520,
+                absolutePosition: { x: Math.round(pageSize.width / 2 - 260), y: Math.round(pageSize.height / 2 - 260) },
+              }
+            : null,
+        ].filter(Boolean),
+      }),
       header: (currentPage, pageCount) => {
+        if (currentPage === 1) return null;
         if (hasClosePage && currentPage === pageCount) return null;
         return {
-        margin: [28, 18, 28, 0],
-        columns: [
-          { text: "Openwall Finance / Portföy", style: "subtitle" },
-          { text: `${currentPage}/${pageCount}`, alignment: "right", style: "subtitle" },
-        ],
+          margin: [28, 16, 28, 0],
+          columns: [
+            logoSvg ? { svg: logoSvg, width: 78 } : { text: "Openwall Finance", style: "subtitle" },
+            {
+              width: "*",
+              stack: [
+                { text: "PORTFÖY RAPORU", style: "subtitle", alignment: "right" },
+                { text: `Rapor No: ${reportId}`, style: "small", alignment: "right" },
+              ],
+            },
+          ],
         };
       },
       footer: (currentPage, pageCount) => {
         if (hasClosePage && currentPage === pageCount) return null;
         return {
-        margin: [28, 0, 28, 18],
-        columns: [
-          { text: `Oluşturma: ${ts}`, style: "subtitle" },
-          { text: `Sayfa ${currentPage}/${pageCount}`, alignment: "right", style: "subtitle" },
-        ],
+          margin: [28, 0, 28, 18],
+          columns: [
+            { text: `Oluşturma: ${ts}`, style: "small" },
+            { text: "Otomatik olarak oluşturulmuştur.", style: "small", alignment: "center" },
+            { text: `Sayfa ${currentPage}/${pageCount}`, alignment: "right", style: "small" },
+          ],
         };
       },
       content: [
@@ -3002,49 +3128,82 @@ const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="70
               width: "*",
               stack: [
                 { text: "Portföy Raporu", style: "title", alignment: "right" },
-                { text: "Ib** Al** Er** adına hazırlanmıştır.", style: "subtitle", alignment: "right" },
+                { text: ownerLine, style: "subtitle", alignment: "right" },
               ],
             },
           ],
           columnGap: 12,
           margin: [0, 0, 0, 8],
         },
+        { canvas: [{ type: "line", x1: 0, y1: 0, x2: 786, y2: 0, lineWidth: 1, lineColor: THEME.line }], margin: [0, 4, 0, 10] },
+        { text: "Rapor Bilgileri", style: "h2" },
         {
-          table: { widths: ["auto", "*"], body: summaryRows },
-          layout: "noBorders",
+          table: {
+            widths: ["*"],
+            body: [
+              [
+                {
+                  table: { widths: ["auto", "*"], body: summaryRows },
+                  layout: "noBorders",
+                },
+              ],
+            ],
+          },
+          layout: layoutCard,
         },
-        { text: "Özet", style: "h2" },
+        { text: "Güncel", style: "h2" },
         {
           table: {
             widths: ["auto", "*"],
-            body: metricsRows.map(([k, v]) => [String(k), String(v ?? NA)]),
+            body: metricsRows.map(([k, v]) => kvRow(k, v, { signed: true })),
           },
-          layout: "lightHorizontalLines",
+          layout: layoutKeyValue,
         },
-        { text: "Detaylı İstatistikler", style: "h2" },
+        { text: "Gerçekleşmiş", style: "h2" },
         {
-          table: { widths: ["auto", "*"], body: detailedRows.map(([k, v]) => [String(k), String(v ?? NA)]) },
-          layout: "lightHorizontalLines",
+          table: { widths: ["auto", "*"], body: detailedRows.map(([k, v]) => kvRow(k, v, { signed: true })) },
+          layout: layoutKeyValue,
         },
         detailed.verdict ? { text: detailed.verdict, style: "small", margin: [0, 6, 0, 0] } : null,
         { text: "Açık Pozisyonlar", style: "h2", pageBreak: "before" },
         {
-          table: { headerRows: 1, widths: [40, 44, 44, 32, 40, 40, 34, 40, 40, 34, 32, 32, 46, "*"], body: openBody },
-          layout: "lightHorizontalLines",
+          table: {
+            headerRows: 1,
+            widths: [40, 44, 44, 32, 40, 40, 34, 40, 40, 34, 32, 32, 46, "*"],
+            body: openBody,
+          },
+          layout: layoutTable,
           fontSize: 8,
         },
         { text: "Kapalı Pozisyonlar", style: "h2" },
         {
-          table: { headerRows: 1, widths: [40, 44, 44, 44, 32, 40, 36, 44, 40, 34, 32, 32, 46, "*"], body: closedBody },
-          layout: "lightHorizontalLines",
+          table: {
+            headerRows: 1,
+            widths: [40, 44, 44, 44, 32, 40, 36, 44, 40, 34, 32, 32, 46, "*"],
+            body: closedBody,
+          },
+          layout: layoutTable,
           fontSize: 8,
+        },
+        {
+          text: "Not: Bu rapor bilgilendirme amaçlıdır; yatırım tavsiyesi değildir.",
+          style: "small",
+          margin: [0, 10, 0, 0],
         },
         closeSvg
           ? {
-              svg: closeSvg,
               pageBreak: "before",
-              absolutePosition: { x: -108, y: 0 },
-              width: 1058,
+              stack: [
+                {
+                  canvas: [{ type: "rect", x: 0, y: 0, w: 2000, h: 2000, color: "#ffffff" }],
+                  absolutePosition: { x: 0, y: 0 },
+                },
+                {
+                  svg: closeSvg,
+                  absolutePosition: { x: -108, y: 0 },
+                  width: 1058,
+                },
+              ],
             }
           : null,
       ].filter(Boolean),

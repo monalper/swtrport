@@ -40,7 +40,6 @@ const el = {
   tableClosed: document.getElementById("table-closed"),
   countOpen: document.getElementById("count-open"),
   countClosed: document.getElementById("count-closed"),
-  liveStatus: document.getElementById("live-status"),
 };
 
 function escapeHTML(s) {
@@ -807,6 +806,108 @@ function viewForRange(points, range) {
 
 const CHART_WIDGETS = new WeakMap();
 
+function dayKeyFromUTCDate(date) {
+  return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+}
+
+function addDaysToDayKey(dayKey, days) {
+  const t = parseDayKeyUTC(dayKey);
+  if (t == null) return null;
+  const d = new Date(t);
+  d.setUTCDate(d.getUTCDate() + Number(days || 0));
+  return dayKeyFromUTCDate(d);
+}
+
+function addMonthsToDayKey(dayKey, months) {
+  const t = parseDayKeyUTC(dayKey);
+  if (t == null) return null;
+  const d = new Date(t);
+
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth();
+  const day = d.getUTCDate();
+
+  const firstOfTarget = new Date(Date.UTC(year, month + Number(months || 0), 1));
+  const lastDayOfTargetMonth = new Date(
+    Date.UTC(firstOfTarget.getUTCFullYear(), firstOfTarget.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+
+  firstOfTarget.setUTCDate(Math.min(day, lastDayOfTargetMonth));
+  return dayKeyFromUTCDate(firstOfTarget);
+}
+
+function firstPointOnOrAfterDayKey(points, dayKey) {
+  const list = Array.isArray(points) ? points : [];
+  if (!isDateKey(dayKey)) return null;
+  for (const p of list) {
+    const k = String(p?.day ?? "");
+    if (!isDateKey(k)) continue;
+    if (k >= dayKey) return p;
+  }
+  return null;
+}
+
+function renderChartPerformance(points) {
+  const grid = document.getElementById("chart-perf-grid");
+  if (!grid) return;
+
+  const list = Array.isArray(points) ? points : [];
+  const end = list.length ? list[list.length - 1] : null;
+  const endDay = String(end?.day ?? "");
+  const endPct = end?.pct;
+
+  const renderNA = () => {
+    renderStatGrid(grid, [
+      statHTML("Haftalık", NA),
+      statHTML("Aylık", NA),
+      statHTML("3 Aylık", NA),
+      statHTML("6 Aylık", NA),
+      statHTML("YBB", NA),
+      statHTML("12 Aylık", NA),
+    ]);
+  };
+
+  if (!isDateKey(endDay) || !Number.isFinite(Number(endPct))) {
+    renderNA();
+    return;
+  }
+
+  const endD = new Date(parseDayKeyUTC(endDay));
+  const ytdStart = `${endD.getUTCFullYear()}-01-01`;
+
+  const startW = addDaysToDayKey(endDay, -7);
+  const startM = addMonthsToDayKey(endDay, -1);
+  const start3M = addMonthsToDayKey(endDay, -3);
+  const start6M = addMonthsToDayKey(endDay, -6);
+  const start12M = addMonthsToDayKey(endDay, -12);
+
+  const calc = (startKey) => {
+    if (!startKey) return null;
+    const startPoint = firstPointOnOrAfterDayKey(list, startKey);
+    if (!startPoint || !Number.isFinite(Number(startPoint.pct))) return null;
+    return seriesReturnBetween(startPoint.pct, endPct);
+  };
+
+  const w = calc(startW);
+  const m = calc(startM);
+  const m3 = calc(start3M);
+  const m6 = calc(start6M);
+  const ytd = calc(ytdStart);
+  const m12 = calc(start12M);
+
+  const v = (x) => (x == null ? NA : formatSignedPct(x));
+  const c = (x) => signedClass(x, { nanClass: "" });
+
+  renderStatGrid(grid, [
+    statHTML("Haftalık", v(w), c(w)),
+    statHTML("Aylık", v(m), c(m)),
+    statHTML("3 Aylık", v(m3), c(m3)),
+    statHTML("6 Aylık", v(m6), c(m6)),
+    statHTML("YBB", v(ytd), c(ytd)),
+    statHTML("12 Aylık", v(m12), c(m12)),
+  ]);
+}
+
 function ensureTwrChartWidget(container) {
   const existing = CHART_WIDGETS.get(container);
   if (existing) return existing;
@@ -1384,6 +1485,7 @@ async function updateChart(positions) {
     widget.setData([]);
     widget.setStatus("Grafik için veri yok.");
     if (meta) meta.textContent = "";
+    renderChartPerformance([]);
     return;
   }
 
@@ -1413,6 +1515,7 @@ async function updateChart(positions) {
     widget.setData([]);
     widget.setStatus(`Grafik yüklenemedi: ${hint}`);
     if (meta) meta.textContent = "";
+    renderChartPerformance([]);
     return;
   } finally {
     if (STATE.history.pending === controller) STATE.history.pending = null;
@@ -1420,6 +1523,7 @@ async function updateChart(positions) {
 
   const points = computeTWRSeries(positions, STATE.history.series, { liveQuotes: STATE.quotes });
   renderTWRChart(points, { container, meta, errors: STATE.history.errors });
+  renderChartPerformance(points);
 }
 
 function scheduleChartUpdate(positions) {
@@ -1742,7 +1846,6 @@ function renderDetailedStats(closedPositions) {
       profitFactor === Infinity || (profitFactor != null && profitFactor >= 1.2) ? "good" : "warn"
     ),
     statHTML("Ortalama Kazanç %", avgWinPct == null ? NA : formatSignedPct(avgWinPct), signedClass(avgWinPct, { nanClass: "" })),
-    statHTML("Ortalama Kayıp %", avgLossPct == null ? NA : formatSignedPct(avgLossPct), signedClass(avgLossPct, { nanClass: "" })),
     statHTML("Beklenti %/işlem", expectancyPct == null ? NA : formatSignedPct(expectancyPct), signedClass(expectancyPct, { nanClass: "" })),
     statHTML("En iyi / En kötü %", bestPct == null || worstPct == null ? NA : `${formatSignedPct(bestPct)} / ${formatSignedPct(worstPct)}`),
     statHTML("Seri (W/L)", n ? `${bestWinStreak}/${bestLossStreak}` : NA),
@@ -2263,7 +2366,6 @@ async function refreshQuotes() {
       };
     }
 
-    updateLiveStatus();
     applyFilters();
     if (STATE.ui.mainTab === "chart") scheduleChartUpdate(STATE.filtered || []);
   } finally {
@@ -2272,8 +2374,6 @@ async function refreshQuotes() {
 }
 
 function startLiveQuotes() {
-  updateLiveStatus();
-
   const refresh = STATE.ui.quotesRefresh;
   if (refresh.timerId != null) window.clearTimeout(refresh.timerId);
 

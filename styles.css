@@ -70,7 +70,7 @@ code {
 .container {
   max-width: 980px;
   margin: 0 auto;
-  padding: 92px 18px 54px;
+  padding: 54px 18px 54px;
   min-height: 100vh;
 }
 
@@ -205,6 +205,7 @@ code {
 
 .mainTab[aria-selected="true"]:hover {
   background: transparent;
+  color: #121214;
 }
 
 .mainTab:focus-visible {
@@ -796,22 +797,6 @@ tbody tr td.flash-down {
 .footer {
   margin-top: 18px;
   font-size: 12px;
-}
-
-.siteHeader {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-}
-
-.siteHeaderArt {
-  width: 100%;
-  height: auto;
-  display: block;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
 }
 
 .siteFooter {

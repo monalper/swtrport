@@ -20,10 +20,6 @@
   <body>
     <a class="skip" href="#main">İçeriğe atla</a>
 
-    <header class="siteHeader" aria-label="Header">
-      <img class="siteHeaderArt" src="assets/header.svg" alt="" draggable="false" />
-    </header>
-
     <main class="container" id="main">
       <header class="hero" aria-label="Özet">
         <div class="heroValue" id="hero-current" aria-live="polite"></div>
@@ -74,10 +70,6 @@
         </section>
 
         <section class="mainPanel" role="tabpanel" data-tabpanel="live" aria-label="Canlı" hidden>
-          <div class="panelTop">
-            <h2>Canlı</h2>
-            <span id="live-status" class="subtle panelRight" aria-live="polite"></span>
-          </div>
           <div class="statsGrid" id="live-grid"></div>
           <div class="spacer"></div>
           <div class="tableShell">
@@ -147,6 +139,12 @@
           </div>
           <div class="chartMeta subtle" id="twr-meta"></div>
           <div class="chart" id="twr-chart"></div>
+          <div class="section" aria-label="Performans">
+            <div class="sectionTop">
+              <h2>Performans</h2>
+            </div>
+            <div class="statsGrid" id="chart-perf-grid"></div>
+          </div>
         </section>
       </section>
 

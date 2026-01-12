@@ -119,6 +119,14 @@ code {
   margin-top: 34px;
 }
 
+.heroActions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
 .heroStat {
   display: grid;
   gap: 6px;
@@ -822,6 +830,103 @@ tbody tr td.flash-down {
   -webkit-user-select: none;
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+.pdfMount {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 980px;
+}
+
+.pdfReport {
+  width: 980px;
+  padding: 18px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.pdfReport h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.pdfReport .pdfMeta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.pdfSection {
+  margin-top: 16px;
+  page-break-inside: avoid;
+}
+
+.pdfSectionTitle {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.pdfReport table {
+  min-width: 0 !important;
+}
+
+.pdfReport table :is(td, th) {
+  white-space: normal;
+  font-size: 10px;
+  padding: 6px 8px;
+}
+
+.pdfReport thead th {
+  background: rgba(245, 245, 247, 0.08);
+}
+
+.pdfReport thead th.sticky-col {
+  background: #262628;
+}
+
+.pdfReport tbody tr:nth-child(odd) th.sticky-col,
+.pdfReport tbody tr:nth-child(odd) td.sticky-col {
+  background: rgba(245, 245, 247, 0.03);
+}
+
+.pdfReport tbody tr:nth-child(even) th.sticky-col,
+.pdfReport tbody tr:nth-child(even) td.sticky-col {
+  background: rgba(245, 245, 247, 0.04);
+}
+
+.pdfReport tbody tr:hover th.sticky-col,
+.pdfReport tbody tr:hover td.sticky-col {
+  background: rgba(245, 245, 247, 0.05);
+}
+
+.pdfReport thead th {
+  position: static;
+}
+
+.pdfReport .sticky-col {
+  position: static;
+}
+
+.pdfReport pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(245, 245, 247, 0.06);
+  border: 1px solid rgba(245, 245, 247, 0.08);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.pdfReport img {
+  max-width: 100%;
+  height: auto;
 }
 
 @media (max-width: 900px) {

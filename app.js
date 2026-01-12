@@ -19,6 +19,7 @@ const STATE = {
     lastLiveChangePctBySymbol: Object.create(null),
     quotesRefresh: { inFlight: false, timerId: null },
     chartPrefs: { metric: "pct", range: "ALL" },
+    exportPdfInFlight: false,
   },
 };
 
@@ -40,6 +41,7 @@ const el = {
   tableClosed: document.getElementById("table-closed"),
   countOpen: document.getElementById("count-open"),
   countClosed: document.getElementById("count-closed"),
+  btnExportPdf: document.getElementById("btn-export-pdf"),
 };
 
 function escapeHTML(s) {
@@ -1183,9 +1185,16 @@ function ensureTwrEChartWidget(container) {
     render();
   };
 
+  const toDataURL = ({ pixelRatio = 2, backgroundColor = "#141416" } = {}) => {
+    if (!chart) return null;
+    const pr = Number(pixelRatio);
+    const bg = typeof backgroundColor === "string" && backgroundColor.trim() ? backgroundColor : "#141416";
+    return chart.getDataURL({ type: "png", pixelRatio: Number.isFinite(pr) ? pr : 2, backgroundColor: bg });
+  };
+
   const downloadPNG = () => {
-    if (!chart) return;
-    const url = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#141416" });
+    const url = toDataURL();
+    if (!url) return;
     const a = document.createElement("a");
     a.href = url;
     a.download = `grafik-${state.metric}.png`;
@@ -1243,7 +1252,7 @@ function ensureTwrEChartWidget(container) {
   const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => resize()) : null;
   if (ro && stage) ro.observe(stage);
 
-  const widget = { setData, setMetric, setRange, setStatus, resize };
+  const widget = { setData, setMetric, setRange, setStatus, resize, toDataURL };
   TWR_ECHART_WIDGETS.set(container, widget);
 
   setMetricButtons();
@@ -1729,9 +1738,14 @@ function ensureTwrChartWidget(container) {
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const toDataURL = () => {
+    if (!canvas) return null;
+    return canvas.toDataURL("image/png");
+  };
+
   const downloadPNG = () => {
-    if (!canvas) return;
-    const url = canvas.toDataURL("image/png");
+    const url = toDataURL();
+    if (!url) return;
     const a = document.createElement("a");
     a.href = url;
     a.download = `portfoy-grafik-${todayKey()}.png`;
@@ -1784,7 +1798,7 @@ function ensureTwrChartWidget(container) {
   const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => resize()) : null;
   if (ro && stage) ro.observe(stage);
 
-  const widget = { setData, setMetric, setRange, setStatus, resize };
+  const widget = { setData, setMetric, setRange, setStatus, resize, toDataURL };
   CHART_WIDGETS.set(container, widget);
 
   setMetricButtons();
@@ -2475,6 +2489,587 @@ function tableHTML(items, { mode }) {
   return `${header}<tbody>${rows}</tbody>`;
 }
 
+function activeFiltersSnapshot() {
+  const q = String(document.getElementById("q")?.value ?? "").trim();
+  const status = String(document.getElementById("status")?.value ?? "").trim();
+  const outcome = String(document.getElementById("outcome")?.value ?? "").trim();
+  return { q, status, outcome };
+}
+
+function computePdfSummaryStats(positions) {
+  const list = Array.isArray(positions) ? positions : [];
+  const open = list.filter((p) => !p.sellDate);
+  const closed = list.filter((p) => p.sellDate);
+
+  const activeAgg = open.reduce(
+    (acc, p) => {
+      const rr = calcRiskReward(p);
+      return {
+        invested: acc.invested + (Number(rr.invested) || 0),
+        riskTL: acc.riskTL + (Number(rr.riskTL) || 0),
+        rewardTL: acc.rewardTL + (Number(rr.rewardTL) || 0),
+      };
+    },
+    { invested: 0, riskTL: 0, rewardTL: 0 }
+  );
+
+  const activeRiskPct = activeAgg.invested ? (activeAgg.riskTL / activeAgg.invested) * 100 : null;
+  const activeRewardPct = activeAgg.invested ? (activeAgg.rewardTL / activeAgg.invested) * 100 : null;
+  const activeRR = activeAgg.riskTL > 0 ? activeAgg.rewardTL / activeAgg.riskTL : null;
+
+  const realizedPnL = closed.reduce(
+    (acc, p) => {
+      const exitP = exitPriceFromOutcome(p);
+      if (exitP == null || !Number.isFinite(exitP)) return acc;
+      const { pnlTL, invested } = calcPnL(p, exitP);
+      return {
+        pnlTL: acc.pnlTL + (Number(pnlTL) || 0),
+        invested: acc.invested + (Number(invested) || 0),
+      };
+    },
+    { pnlTL: 0, invested: 0 }
+  );
+  const realizedPct = realizedPnL.invested ? (realizedPnL.pnlTL / realizedPnL.invested) * 100 : null;
+
+  const closedClassified = closed
+    .map((p) => outcomeLabel(p))
+    .filter((x) => x === OUTCOME.good || x === OUTCOME.bad);
+  const wins = closedClassified.filter((x) => x === OUTCOME.good).length;
+  const losses = closedClassified.filter((x) => x === OUTCOME.bad).length;
+  const winRate = wins + losses ? (wins / (wins + losses)) * 100 : null;
+
+  const liveAgg = open.reduce(
+    (acc, p) => {
+      const quote = STATE.quotes?.[String(p.symbol ?? "")];
+      const price = Number(quote?.price);
+      const changeAbs = Number(quote?.changeAbs);
+      const qty = approxQuantity(p?.total, p?.unitCost);
+      const unitCost = Number(p?.unitCost);
+
+      if (qty == null || !Number.isFinite(unitCost) || !Number.isFinite(price)) return acc;
+
+      const marketValue = qty * price;
+      const unreal = qty * (price - unitCost);
+      const day = Number.isFinite(changeAbs) ? qty * changeAbs : null;
+
+      return {
+        marketValue: acc.marketValue + marketValue,
+        unrealized: acc.unrealized + unreal,
+        dayChange: acc.dayChange + (Number(day) || 0),
+        priced: acc.priced + 1,
+      };
+    },
+    { marketValue: 0, unrealized: 0, dayChange: 0, priced: 0 }
+  );
+
+  const hasLive = liveAgg.priced > 0;
+  const dayBaseValue = hasLive ? liveAgg.marketValue - liveAgg.dayChange : null;
+  const dayChangePct = dayBaseValue ? (liveAgg.dayChange / dayBaseValue) * 100 : null;
+
+  return {
+    openCount: open.length,
+    closedCount: closed.length,
+    activeAgg,
+    liveAgg,
+    hasLive,
+    dayChangePct,
+    realizedPnL,
+    realizedPct,
+    winRate,
+    activeRiskPct,
+    activeRewardPct,
+    activeRR,
+  };
+}
+
+function computePdfDetailedStatsValues(closedPositions) {
+  const positions = Array.isArray(closedPositions) ? closedPositions : [];
+  const trades = [];
+
+  for (const p of positions) {
+    const exit = exitPriceFromOutcome(p);
+    const { pnlTL, pnlPct } = calcPnL(p, exit);
+    if (pnlTL == null || pnlPct == null) continue;
+
+    const outcome = outcomeLabel(p);
+    if (outcome !== OUTCOME.good && outcome !== OUTCOME.bad) continue;
+
+    const buy = parseISODate(p?.buyDate);
+    const sell = parseISODate(p?.sellDate);
+    const holdDays =
+      buy && sell && Number.isFinite(buy.getTime()) && Number.isFinite(sell.getTime()) ? (sell - buy) / 86_400_000 : null;
+
+    trades.push({ pnlTL, pnlPct, outcome, holdDays });
+  }
+
+  const n = trades.length;
+  const closedCount = positions.length;
+  const wins = trades.filter((t) => t.pnlTL > 0);
+  const losses = trades.filter((t) => t.pnlTL < 0);
+  const breakeven = trades.filter((t) => t.pnlTL === 0);
+
+  const winRate = n ? (wins.length / n) * 100 : null;
+
+  const sum = (arr, pick) => arr.reduce((acc, x) => acc + (Number(pick(x)) || 0), 0);
+  const avg = (arr, pick) => (arr.length ? sum(arr, pick) / arr.length : null);
+
+  const totalPnL = n ? sum(trades, (t) => t.pnlTL) : null;
+  const totalWins = wins.length ? sum(wins, (t) => t.pnlTL) : 0;
+  const totalLossesAbs = losses.length ? Math.abs(sum(losses, (t) => t.pnlTL)) : 0;
+  const profitFactor = totalLossesAbs > 0 ? totalWins / totalLossesAbs : totalWins > 0 ? Infinity : null;
+
+  const avgWinPct = avg(wins, (t) => t.pnlPct);
+  const avgLossPct = avg(losses, (t) => t.pnlPct);
+
+  const expectancyPct = (() => {
+    if (winRate == null) return null;
+    const w = winRate / 100;
+    const l = 1 - w;
+    if (w === 1 && avgWinPct != null) return avgWinPct;
+    if (l === 1 && avgLossPct != null) return avgLossPct;
+    if (avgWinPct == null || avgLossPct == null) return null;
+    return w * avgWinPct + l * avgLossPct;
+  })();
+
+  const bestPct = n ? Math.max(...trades.map((t) => t.pnlPct)) : null;
+  const worstPct = n ? Math.min(...trades.map((t) => t.pnlPct)) : null;
+
+  const avgHoldDays = avg(trades.filter((t) => t.holdDays != null), (t) => t.holdDays);
+
+  const bySellDate = positions
+    .map((p) => {
+      const sell = parseISODate(p?.sellDate);
+      const exit = exitPriceFromOutcome(p);
+      const { pnlTL } = calcPnL(p, exit);
+      return { sell, pnlTL };
+    })
+    .filter((x) => x.sell && x.pnlTL != null)
+    .sort((a, b) => a.sell - b.sell);
+
+  let bestWinStreak = 0;
+  let bestLossStreak = 0;
+  let curWin = 0;
+  let curLoss = 0;
+  for (const x of bySellDate) {
+    if (x.pnlTL > 0) {
+      curWin += 1;
+      curLoss = 0;
+    } else if (x.pnlTL < 0) {
+      curLoss += 1;
+      curWin = 0;
+    } else {
+      curWin = 0;
+      curLoss = 0;
+    }
+    if (curWin > bestWinStreak) bestWinStreak = curWin;
+    if (curLoss > bestLossStreak) bestLossStreak = curLoss;
+  }
+
+  let verdict = "";
+  if (!closedCount) verdict = "";
+  else if (!n) verdict = "Bu bölüm için değerlendirilebilir kapanış verisi yok. (Kapanan işlemlerde outcome=1/0 ve takeProfit/stopLoss dolu olmalı.)";
+  else if (n < 10) verdict = `Veri az (${n} işlem). İstatistiklerin anlamlı olması için daha fazla kapanan işlem gerekir.`;
+  else if (wins.length && !losses.length) verdict = "Şu an tüm işlemler kâr görünüyor; veri tek taraflı. Daha fazla kapanış verisiyle tekrar değerlendir.";
+  else if (!wins.length && losses.length) verdict = "Şu an tüm işlemler zarar görünüyor; sistem/uygulama tarafında iyileştirme gerekiyor.";
+  else if (expectancyPct != null && expectancyPct > 0) verdict = "Bu veri setinde pozitif beklenti var (uzun vadede artı).";
+  else if (expectancyPct != null && expectancyPct <= 0) verdict = "Bu veri setinde beklenti nötr/negatif görünüyor; giriş/çıkış ve risk yönetimini gözden geçir.";
+
+  return {
+    n,
+    winRate,
+    totalPnL,
+    profitFactor,
+    avgWinPct,
+    avgLossPct,
+    expectancyPct,
+    bestPct,
+    worstPct,
+    avgHoldDays,
+    bestWinStreak,
+    bestLossStreak,
+    breakevenCount: breakeven.length,
+    verdict,
+  };
+}
+
+async function exportPortfolioPDF() {
+  if (STATE.ui.exportPdfInFlight) return;
+  STATE.ui.exportPdfInFlight = true;
+
+  const btn = el.btnExportPdf;
+  const prevText = btn ? String(btn.textContent ?? "") : "";
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      btn.textContent = "PDF hazırlanıyor...";
+    }
+
+    const pdfMake = window.pdfMake;
+    if (!pdfMake || typeof pdfMake.createPdf !== "function") throw new Error("PDF kütüphanesi (pdfmake) yüklenmedi.");
+
+    const positions = Array.isArray(STATE.filtered) && STATE.filtered.length ? STATE.filtered : Array.isArray(STATE.data?.positions) ? STATE.data.positions : [];
+    const open = positions.filter((p) => !p.sellDate);
+    const closed = positions.filter((p) => p.sellDate);
+
+    open.sort((a, b) => {
+      const da = parseISODate(a.buyDate)?.getTime() ?? 0;
+      const db = parseISODate(b.buyDate)?.getTime() ?? 0;
+      if (db !== da) return db - da;
+      return String(a.symbol).localeCompare(String(b.symbol), "tr");
+    });
+
+    closed.sort((a, b) => {
+      const da = parseISODate(a.sellDate)?.getTime() ?? 0;
+      const db = parseISODate(b.sellDate)?.getTime() ?? 0;
+      if (db !== da) return db - da;
+      return String(a.symbol).localeCompare(String(b.symbol), "tr");
+    });
+
+    const filters = activeFiltersSnapshot();
+    const summary = computePdfSummaryStats(positions);
+
+    const detailed = (() => {
+      const stats = computePdfDetailedStatsValues(closed);
+      return stats;
+    })();
+
+    const now = new Date();
+    const ts = now.toLocaleString("tr-TR", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const filterParts = [];
+    if (filters?.q) filterParts.push(`Arama: ${filters.q}`);
+    if (filters?.status) filterParts.push(`Durum: ${filters.status}`);
+    if (filters?.outcome) filterParts.push(`Son durum: ${filters.outcome}`);
+
+    const liveState = String(STATE.live?.state ?? "idle");
+    const liveLine =
+      liveState === "ok"
+        ? "Canlı veri: açık"
+        : liveState === "error"
+          ? `Canlı veri: kapalı (${String(STATE.live?.message ?? "").trim() || "hata"})`
+          : "Canlı veri: bekleniyor";
+
+    const kv = (k, v) => [{ text: String(k), style: "kvKey" }, { text: String(v ?? NA), style: "kvVal" }];
+
+    const money = (x) => (x == null ? NA : formatTL(x));
+    const smoney = (x) => (x == null ? NA : formatSignedTL(x));
+    const spct = (x) => (x == null ? NA : formatSignedPct(x));
+
+    const summaryRows = [
+      kv("Oluşturma", ts),
+      kv("Para birimi", getCurrency()),
+      kv("Pozisyon", String(positions.length)),
+      kv("Açık / Kapalı", `${open.length} / ${closed.length}`),
+      kv("Filtre", filterParts.length ? filterParts.join(" | ") : "-"),
+      kv("Canlı", liveLine),
+    ];
+
+    const metricsRows = [
+      ["Aktif Tutar", money(summary.activeAgg.invested)],
+      ["Toplam Risk (SL)", smoney(-summary.activeAgg.riskTL)],
+      ["Risk Oranı", spct(summary.activeRiskPct == null ? null : -summary.activeRiskPct)],
+      ["Potansiyel (TP)", smoney(summary.activeAgg.rewardTL)],
+      ["Pot. Getiri", spct(summary.activeRewardPct)],
+      ["Risk/Ödül", summary.activeRR == null || !Number.isFinite(summary.activeRR) ? NA : String(Math.round(summary.activeRR * 100) / 100)],
+      ["Canlı Değer", summary.hasLive ? money(summary.liveAgg.marketValue) : NA],
+      ["Canlı P/L", summary.hasLive ? smoney(summary.liveAgg.unrealized) : NA],
+      ["Günlük P/L", summary.hasLive ? smoney(summary.liveAgg.dayChange) : NA],
+      ["Günlük Getiri", summary.hasLive ? spct(summary.dayChangePct) : NA],
+      ["Gerçekleşen P/L", smoney(summary.realizedPnL.pnlTL)],
+      ["Gerçekleşen Getiri", spct(summary.realizedPct)],
+      ["Kazanma Oranı", formatPct(summary.winRate)],
+    ];
+
+    const openBody = [
+      [
+        { text: "Sembol", style: "th" },
+        { text: "Alış", style: "th" },
+        { text: "Maliyet", style: "th" },
+        { text: "Adet", style: "th" },
+        { text: "Tutar", style: "th" },
+        { text: "Canlı", style: "th" },
+        { text: "Gün %", style: "th" },
+        { text: "Değer", style: "th" },
+        { text: "P/L", style: "th" },
+        { text: "P/L %", style: "th" },
+        { text: "SL", style: "th" },
+        { text: "TP", style: "th" },
+        { text: "Durum", style: "th" },
+        { text: "Not", style: "th" },
+      ],
+    ];
+
+    for (const p of open) {
+      const symbol = String(p?.symbol ?? NA);
+      const qty = approxQuantity(p?.total, p?.unitCost);
+      const quote = STATE.quotes?.[symbol];
+      const livePrice = Number(quote?.price);
+      const liveChangePct = Number(quote?.changePct);
+      const unitCost = Number(p?.unitCost);
+      const liveValue = qty != null && Number.isFinite(livePrice) ? qty * livePrice : null;
+      const pnlTL = qty != null && Number.isFinite(livePrice) && Number.isFinite(unitCost) ? qty * (livePrice - unitCost) : null;
+      const pnlPct = Number.isFinite(livePrice) && Number.isFinite(unitCost) && unitCost !== 0 ? ((livePrice / unitCost) - 1) * 100 : null;
+
+      openBody.push([
+        symbol,
+        formatDateTR(p?.buyDate),
+        formatTL(p?.unitCost),
+        qty == null ? NA : String(qty),
+        formatTL(p?.total),
+        Number.isFinite(livePrice) ? formatTL(livePrice) : NA,
+        Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA,
+        liveValue == null ? NA : formatTL(liveValue),
+        pnlTL == null ? NA : formatSignedTL(pnlTL),
+        pnlPct == null ? NA : formatSignedPct(pnlPct),
+        formatTL(p?.stopLoss),
+        formatTL(p?.takeProfit),
+        String(p?.status ?? NA),
+        String(p?.notes ?? ""),
+      ]);
+    }
+
+    const closedBody = [
+      [
+        { text: "Sembol", style: "th" },
+        { text: "Alış", style: "th" },
+        { text: "Satış", style: "th" },
+        { text: "Maliyet", style: "th" },
+        { text: "Adet", style: "th" },
+        { text: "Tutar", style: "th" },
+        { text: "Çıkış", style: "th" },
+        { text: "Son durum", style: "th" },
+        { text: "P/L", style: "th" },
+        { text: "P/L %", style: "th" },
+        { text: "SL", style: "th" },
+        { text: "TP", style: "th" },
+        { text: "Durum", style: "th" },
+        { text: "Not", style: "th" },
+      ],
+    ];
+
+    for (const p of closed) {
+      const symbol = String(p?.symbol ?? NA);
+      const qty = approxQuantity(p?.total, p?.unitCost);
+      const exit = exitPriceFromOutcome(p);
+      const { pnlTL, pnlPct } = calcPnL(p, exit);
+      const outcome = outcomeLabel(p);
+      closedBody.push([
+        symbol,
+        formatDateTR(p?.buyDate),
+        formatDateTR(p?.sellDate),
+        formatTL(p?.unitCost),
+        qty == null ? NA : String(qty),
+        formatTL(p?.total),
+        exit == null ? NA : formatTL(exit),
+        outcome,
+        pnlTL == null ? NA : formatSignedTL(pnlTL),
+        pnlPct == null ? NA : formatSignedPct(pnlPct),
+        formatTL(p?.stopLoss),
+        formatTL(p?.takeProfit),
+        String(p?.status ?? NA),
+        String(p?.notes ?? ""),
+      ]);
+    }
+
+    const detailedRows = [
+      ["İşlem (değerlendirilebilir)", String(detailed.n)],
+      ["Kazanma oranı", detailed.winRate == null ? NA : formatPct(detailed.winRate)],
+      ["Net P/L", detailed.totalPnL == null ? NA : formatSignedTL(detailed.totalPnL)],
+      ["Profit Factor", detailed.profitFactor == null ? NA : detailed.profitFactor === Infinity ? "∞" : String(Math.round(detailed.profitFactor * 100) / 100)],
+      ["Ort. Kazanç %", detailed.avgWinPct == null ? NA : formatSignedPct(detailed.avgWinPct)],
+      ["Ort. Kayıp %", detailed.avgLossPct == null ? NA : formatSignedPct(detailed.avgLossPct)],
+      ["Beklenti %/işlem", detailed.expectancyPct == null ? NA : formatSignedPct(detailed.expectancyPct)],
+      ["En iyi / En kötü %", detailed.bestPct == null || detailed.worstPct == null ? NA : `${formatSignedPct(detailed.bestPct)} / ${formatSignedPct(detailed.worstPct)}`],
+      ["Seri (W/L)", detailed.n ? `${detailed.bestWinStreak}/${detailed.bestLossStreak}` : NA],
+      ["Ort. Süre (gün)", detailed.avgHoldDays == null ? NA : String(Math.round(detailed.avgHoldDays * 10) / 10)],
+      ["Breakeven", String(detailed.breakevenCount)],
+    ];
+
+const PDF_LOGO_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" width="700.376" height="222" viewBox="0 0 700.376 222">
+  <g id="pdflogo" transform="translate(-211.624 -281)">
+    <text id="Finance" transform="translate(337 427)" font-size="152" font-family="Helvetica-Bold, Helvetica" font-weight="700"><tspan x="0" y="0">Finance</tspan></text>
+    <path id="daisy" d="M95.571,42.072l-20.3,3.944L92.414,34.453A12.556,12.556,0,1,0,74.719,16.758L63.106,34.153,67.1,13.6a12.557,12.557,0,1,0-25.028,0l4.089,20.515L34.453,16.758a12.555,12.555,0,0,0-18.464-.769h0a12.555,12.555,0,0,0,.769,18.464L34.153,46.066,13.6,42.072A12.559,12.559,0,0,0,0,54.586H0A12.557,12.557,0,0,0,13.6,67.1l20.77-4.139L16.758,74.719a12.555,12.555,0,0,0-.769,18.464h0a12.555,12.555,0,0,0,18.464-.769L46.162,75.056,42.072,95.571a12.557,12.557,0,1,0,25.028,0L63.106,75.019,74.719,92.414A12.556,12.556,0,1,0,92.414,74.719L75.056,63.01,95.571,67.1a12.559,12.559,0,0,0,13.6-12.514h0a12.557,12.557,0,0,0-13.6-12.514ZM54.586,65.958A11.372,11.372,0,1,1,65.958,54.586,11.37,11.37,0,0,1,54.586,65.958Z" transform="translate(211.624 318)"/>
+    <text id="PortfБy" transform="translate(907 493)" font-size="46" font-family="Helvetica"><tspan x="-145.727" y="0">PortfБy</tspan></text>
+  </g>
+</svg>`;
+
+    const PDF_CLOSE_SVG_FALLBACK = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1920" height="1080.38" viewBox="0 0 1920 1080.38">
+  <defs>
+    <clipPath id="clip-path">
+      <rect y="-185" width="1788.759" height="1079.759" fill="none"/>
+    </clipPath>
+  </defs>
+  <g id="pdfclose" transform="translate(0)">
+    <g id="Scroll_Group_1" data-name="Scroll Group 1" transform="translate(65.62 185.62)" clip-path="url(#clip-path)" style="isolation: isolate">
+      <path id="daisy" d="M1565.91,689.343l-332.635,64.619L1514.185,564.5c91.9-77.736,97.711-217.409,12.6-302.524s-224.787-79.3-302.524,12.6L1033.978,559.583l65.439-336.734C1109.4,102.928,1014.749,0,894.38,0S679.356,102.854,689.343,222.85l67,336.138L564.5,274.575c-77.736-91.9-217.409-97.711-302.524-12.6h0c-85.115,85.115-79.3,224.787,12.6,302.524L559.584,754.782,222.85,689.343C102.928,679.356,0,774.011,0,894.38H0c0,120.368,102.854,215.024,222.85,205.036l340.311-67.824L274.575,1224.257c-91.9,77.736-97.711,217.409-12.6,302.524h0c85.115,85.115,224.787,79.3,302.524-12.6l191.844-284.413-67,336.138c-9.987,119.921,84.668,222.85,205.037,222.85s215.024-102.854,205.036-222.85l-65.439-336.734,190.279,285.009c77.736,91.9,217.409,97.711,302.524,12.6s79.3-224.788-12.6-302.524l-284.413-191.844,336.138,67c119.921,9.987,222.85-84.668,222.85-205.036h0c0-120.369-102.854-215.024-222.85-205.037ZM894.38,1080.709A186.329,186.329,0,1,1,1080.709,894.38,186.3,186.3,0,0,1,894.38,1080.709Z" fill="#616161" opacity="0.05"/>
+    </g>
+    <g id="pdflogo" transform="translate(398.688 154.25)">
+      <text id="Finance" transform="translate(337.312 427)" fill="#003cff" font-size="152" font-family="Helvetica-Bold, Helvetica" font-weight="700"><tspan x="0" y="0">Finance</tspan></text>
+      <text id="portfoy.openwall.com.tr" transform="translate(530.312 482.5)" fill="#1d1d1f" font-size="36" font-family="Helvetica"><tspan x="0" y="0">portfoy.</tspan><tspan y="0" font-family="Helvetica-Bold, Helvetica" font-weight="700">openwall</tspan><tspan y="0">.com.tr</tspan></text>
+      <path id="daisy-2" data-name="daisy" d="M95.571,42.072l-20.3,3.944L92.414,34.453A12.556,12.556,0,1,0,74.719,16.758L63.106,34.153,67.1,13.6a12.557,12.557,0,1,0-25.028,0l4.089,20.515L34.453,16.758a12.555,12.555,0,0,0-18.464-.769h0a12.555,12.555,0,0,0,.769,18.464L34.153,46.066,13.6,42.072A12.559,12.559,0,0,0,0,54.586H0A12.557,12.557,0,0,0,13.6,67.1l20.77-4.139L16.758,74.719a12.555,12.555,0,0,0-.769,18.464h0a12.555,12.555,0,0,0,18.464-.769L46.162,75.056,42.072,95.571a12.557,12.557,0,1,0,25.028,0L63.106,75.019,74.719,92.414A12.556,12.556,0,1,0,92.414,74.719L75.056,63.01,95.571,67.1a12.559,12.559,0,0,0,13.6-12.514h0a12.557,12.557,0,0,0-13.6-12.514ZM54.586,65.958A11.372,11.372,0,1,1,65.958,54.586,11.37,11.37,0,0,1,54.586,65.958Z" transform="translate(211.624 318)" fill="#003cff"/>
+    </g>
+    <g id="Group_2" data-name="Group 2">
+      <rect id="Rectangle_1" data-name="Rectangle 1" width="9" height="29" fill="#003bfb"/>
+      <rect id="Rectangle_2" data-name="Rectangle 2" width="9" height="29" transform="translate(29) rotate(90)" fill="#003bfb"/>
+    </g>
+    <g id="Group_1" data-name="Group 1" transform="translate(-97 1117) rotate(-90)">
+      <rect id="Rectangle_3" data-name="Rectangle 3" width="9" height="29" transform="translate(37 97)" fill="#003bfb"/>
+      <rect id="Rectangle_4" data-name="Rectangle 4" width="9" height="29" transform="translate(66 97) rotate(90)" fill="#003bfb"/>
+    </g>
+    <g id="Group_3" data-name="Group 3" transform="translate(2017 -37) rotate(90)">
+      <rect id="Rectangle_3-2" data-name="Rectangle 3" width="9" height="29" transform="translate(37 97)" fill="#003bfb"/>
+      <rect id="Rectangle_4-2" data-name="Rectangle 4" width="9" height="29" transform="translate(66 97) rotate(90)" fill="#003bfb"/>
+    </g>
+    <g id="Group_4" data-name="Group 4" transform="translate(1957 1177) rotate(180)">
+      <rect id="Rectangle_3-3" data-name="Rectangle 3" width="9" height="29" transform="translate(37 97)" fill="#003bfb"/>
+      <rect id="Rectangle_4-3" data-name="Rectangle 4" width="9" height="29" transform="translate(66 97) rotate(90)" fill="#003bfb"/>
+    </g>
+  </g>
+</svg>`;
+
+    const loadSvgText = async (url) => {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return null;
+        const text = await res.text();
+        return typeof text === "string" && text.includes("<svg") ? text : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const sanitizeSvgForPdf = (svgText) => {
+      let s = String(svgText ?? "");
+      s = s.replace(/\sxmlns:xlink=(\"[^\"]*\"|'[^']*')/gi, "");
+      s = s.replace(/<defs[\s\S]*?<\/defs>/gi, "");
+      s = s.replace(/\sclip-path=(\"[^\"]*\"|'[^']*')/gi, "");
+      s = s.replace(/\sstyle=(\"isolation:\s*isolate\"|'isolation:\s*isolate')/gi, "");
+      return s;
+    };
+
+    const logoSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdflogo.svg")) ?? PDF_LOGO_SVG_FALLBACK);
+    const closeSvg = sanitizeSvgForPdf((await loadSvgText("assets/pdfclose.svg")) ?? PDF_CLOSE_SVG_FALLBACK);
+    const hasClosePage = !!closeSvg;
+
+    const docDefinition = {
+      pageSize: "A4",
+      pageMargins: [28, 54, 28, 38],
+      info: { title: "Portföy Raporu", author: "SWPort", subject: "Portföy Raporu" },
+      defaultStyle: { font: "Roboto", fontSize: 10, color: "#111111" },
+      styles: {
+        title: { fontSize: 16, bold: true, color: "#111111" },
+        subtitle: { fontSize: 10, color: "#444444" },
+        h2: { fontSize: 11, bold: true, margin: [0, 12, 0, 6] },
+        th: { bold: true, fontSize: 8, color: "#111111" },
+        kvKey: { bold: true, fontSize: 9, color: "#333333" },
+        kvVal: { fontSize: 9, color: "#111111" },
+        small: { fontSize: 8, color: "#444444" },
+        mono: { fontSize: 7, color: "#222222" },
+      },
+      header: (currentPage, pageCount) => {
+        if (hasClosePage && currentPage === pageCount) return null;
+        return {
+        margin: [28, 18, 28, 0],
+        columns: [
+          { text: "Openwall Finance / Portföy", style: "subtitle" },
+          { text: `${currentPage}/${pageCount}`, alignment: "right", style: "subtitle" },
+        ],
+        };
+      },
+      footer: (currentPage, pageCount) => {
+        if (hasClosePage && currentPage === pageCount) return null;
+        return {
+        margin: [28, 0, 28, 18],
+        columns: [
+          { text: `Oluşturma: ${ts}`, style: "subtitle" },
+          { text: `Sayfa ${currentPage}/${pageCount}`, alignment: "right", style: "subtitle" },
+        ],
+        };
+      },
+      content: [
+        {
+          columns: [
+            logoSvg ? { svg: logoSvg, width: 140 } : { text: "", width: 140 },
+            {
+              width: "*",
+              stack: [
+                { text: "Portföy Raporu", style: "title", alignment: "right" },
+                { text: "Ib** Al** Er** adına hazırlanmıştır.", style: "subtitle", alignment: "right" },
+              ],
+            },
+          ],
+          columnGap: 12,
+          margin: [0, 0, 0, 8],
+        },
+        {
+          table: { widths: ["auto", "*"], body: summaryRows },
+          layout: "noBorders",
+        },
+        { text: "Özet", style: "h2" },
+        {
+          table: {
+            widths: ["auto", "*"],
+            body: metricsRows.map(([k, v]) => [String(k), String(v ?? NA)]),
+          },
+          layout: "lightHorizontalLines",
+        },
+        { text: "Detaylı İstatistikler", style: "h2" },
+        {
+          table: { widths: ["auto", "*"], body: detailedRows.map(([k, v]) => [String(k), String(v ?? NA)]) },
+          layout: "lightHorizontalLines",
+        },
+        detailed.verdict ? { text: detailed.verdict, style: "small", margin: [0, 6, 0, 0] } : null,
+        { text: "Açık Pozisyonlar", style: "h2", pageBreak: "before" },
+        {
+          table: { headerRows: 1, widths: [40, 44, 44, 32, 40, 40, 34, 40, 40, 34, 32, 32, 46, "*"], body: openBody },
+          layout: "lightHorizontalLines",
+          fontSize: 8,
+        },
+        { text: "Kapalı Pozisyonlar", style: "h2" },
+        {
+          table: { headerRows: 1, widths: [40, 44, 44, 44, 32, 40, 36, 44, 40, 34, 32, 32, 46, "*"], body: closedBody },
+          layout: "lightHorizontalLines",
+          fontSize: 8,
+        },
+        closeSvg
+          ? {
+              svg: closeSvg,
+              pageBreak: "before",
+              absolutePosition: { x: -108, y: 0 },
+              width: 1058,
+            }
+          : null,
+      ].filter(Boolean),
+      pageOrientation: "landscape",
+    };
+
+    pdfMake.createPdf(docDefinition).download(`Openwall-Portföy-${todayKey()}.pdf`);
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    if (el.notice) {
+      el.notice.innerHTML = `<div class="empty"><div>PDF oluşturulamadı.</div><div class="subtle" style="margin-top:8px">${escapeHTML(
+        msg
+      )}</div></div>`;
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      btn.textContent = prevText || "PDF İndir";
+    }
+
+    STATE.ui.exportPdfInFlight = false;
+  }
+}
+
 function applyFilters() {
   const qEl = document.getElementById("q");
   const statusEl = document.getElementById("status");
@@ -2529,6 +3124,10 @@ function wire() {
   for (const input of filterEls) {
     input.addEventListener("input", applyFilters);
     input.addEventListener("change", applyFilters);
+  }
+
+  if (el.btnExportPdf) {
+    el.btnExportPdf.addEventListener("click", () => exportPortfolioPDF());
   }
 
   if (el.mainTabs) {

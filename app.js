@@ -908,6 +908,350 @@ function renderChartPerformance(points) {
   ]);
 }
 
+const TWR_ECHART_WIDGETS = new WeakMap();
+
+function ensureTwrEChartWidget(container) {
+  const existing = TWR_ECHART_WIDGETS.get(container);
+  if (existing) return existing;
+
+  container.innerHTML = `
+    <div class="chartToolbar" role="group" aria-label="Grafik kontrolleri">
+      <div class="segmented" role="group" aria-label="Metrik">
+        <button class="segBtn" type="button" data-metric="pct" aria-pressed="true">% Getiri</button>
+        <button class="segBtn" type="button" data-metric="value" aria-pressed="false">Değer</button>
+      </div>
+      <div class="rangePills" role="group" aria-label="Zaman aralığı">
+        <button class="pillBtn" type="button" data-range="1W">1H</button>
+        <button class="pillBtn" type="button" data-range="1M">1A</button>
+        <button class="pillBtn" type="button" data-range="3M">3A</button>
+        <button class="pillBtn" type="button" data-range="6M">6A</button>
+        <button class="pillBtn" type="button" data-range="YTD">YTD</button>
+        <button class="pillBtn" type="button" data-range="1Y">1Y</button>
+        <button class="pillBtn" type="button" data-range="ALL">Tümü</button>
+      </div>
+      <div class="chartActions">
+        <span class="chartKpi subtle" data-role="kpi"></span>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="download-png">PNG</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-action="download-csv">CSV</button>
+      </div>
+    </div>
+    <div class="chartStage" tabindex="0" role="application" aria-label="Portföy grafiği">
+      <div class="chartEcharts" data-role="echarts"></div>
+      <div class="chartEmpty subtle" data-role="empty" hidden></div>
+    </div>
+  `.trim();
+
+  const stage = container.querySelector(".chartStage");
+  const chartEl = container.querySelector('[data-role="echarts"]');
+  const empty = container.querySelector('[data-role="empty"]');
+  const kpi = container.querySelector('[data-role="kpi"]');
+
+  const state = {
+    metric: STATE.ui.chartPrefs?.metric === "value" ? "value" : "pct",
+    range: typeof STATE.ui.chartPrefs?.range === "string" ? STATE.ui.chartPrefs.range : "ALL",
+    points: [],
+    view: null,
+  };
+
+  const setStatus = (message) => {
+    if (!empty) return;
+    const msg = String(message ?? "").trim();
+    if (!msg) {
+      empty.setAttribute("hidden", "");
+      empty.textContent = "";
+      return;
+    }
+    empty.textContent = msg;
+    empty.removeAttribute("hidden");
+  };
+
+  const setMetricButtons = () => {
+    for (const btn of Array.from(container.querySelectorAll("button[data-metric]"))) {
+      btn.setAttribute("aria-pressed", btn.dataset.metric === state.metric ? "true" : "false");
+    }
+  };
+
+  const setRangeButtons = () => {
+    for (const btn of Array.from(container.querySelectorAll("button[data-range]"))) {
+      btn.setAttribute("aria-pressed", btn.dataset.range === state.range ? "true" : "false");
+    }
+  };
+
+  const visiblePoints = () => {
+    if (!state.view) return state.points;
+    const { t0, t1 } = state.view;
+    return state.points.filter((p) => p.t >= t0 && p.t <= t1);
+  };
+
+  const computeRangeReturnPct = (pts) => {
+    if (pts.length < 2) return null;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (state.metric === "pct") return seriesReturnBetween(first?.pct, last?.pct);
+    const a = Number(first?.value);
+    const b = Number(last?.value);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null;
+    return ((b / a) - 1) * 100;
+  };
+
+  const updateKpi = () => {
+    if (!kpi) return;
+    const pts = visiblePoints();
+    if (pts.length < 2) {
+      kpi.textContent = "";
+      return;
+    }
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const ret = computeRangeReturnPct(pts);
+    const dd = computeMaxDrawdownPct(pts);
+    const retTxt = ret == null ? NA : formatSignedPct(ret);
+    const ddTxt = dd == null ? NA : formatSignedPct(dd);
+    kpi.textContent = `${metricLabel(state.metric)} • ${formatShortDateTR(first.day)} → ${formatShortDateTR(
+      last.day
+    )} • Getiri: ${retTxt} • Max DD: ${ddTxt}`;
+  };
+
+  const hasEcharts = typeof window !== "undefined" && !!window.echarts && !!chartEl;
+  const chart = hasEcharts ? window.echarts.init(chartEl, null, { renderer: "canvas" }) : null;
+
+  const render = () => {
+    if (!hasEcharts || !chart) {
+      setStatus(
+        "Profesyonel grafik için ECharts yüklenemedi. Sunucu ile açmayı dene (py -3 server.py 8000 veya node server.mjs)."
+      );
+      return;
+    }
+
+    if (!state.points.length) {
+      chart.clear();
+      updateKpi();
+      return;
+    }
+
+    if (!["1W", "1M", "3M", "6M", "YTD", "1Y", "ALL", "CUSTOM"].includes(state.range)) state.range = "ALL";
+    state.view = viewForRange(state.points, state.range === "CUSTOM" ? "ALL" : state.range) || null;
+
+    const pts = visiblePoints();
+    if (pts.length < 2) {
+      chart.clear();
+      updateKpi();
+      return;
+    }
+
+    const ret = computeRangeReturnPct(pts);
+    const isPct = state.metric === "pct";
+
+    const palette = {
+      good: { line: "#34c759", fill: "rgba(52, 199, 89, 0.22)" },
+      bad: { line: "#ff453a", fill: "rgba(255, 69, 58, 0.22)" },
+      neutral: { line: "#f5f5f7", fill: "rgba(245, 245, 247, 0.16)" },
+    };
+    const theme = ret != null && ret > 0 ? palette.good : ret != null && ret < 0 ? palette.bad : palette.neutral;
+
+    const seriesData = state.points.map((p) => [p.t, state.metric === "value" ? Number(p.value) : Number(p.pct)]);
+    const t0 = state.view?.t0 ?? pts[0].t;
+    const t1 = state.view?.t1 ?? pts[pts.length - 1].t;
+
+    const option = {
+      animation: false,
+      grid: { left: 56, right: 18, top: 14, bottom: 54 },
+      xAxis: {
+        type: "time",
+        boundaryGap: false,
+        axisLine: { lineStyle: { color: "rgba(245,245,247,0.20)" } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: "rgba(245,245,247,0.62)",
+          formatter: (value) =>
+            new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short" }).format(new Date(value)),
+        },
+        splitLine: { show: false },
+      },
+      yAxis: {
+        type: "value",
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: "rgba(245,245,247,0.70)",
+          formatter: (v) => (isPct ? formatSignedPct(Number(v)) : formatTL(Number(v))),
+        },
+        splitLine: { show: true, lineStyle: { color: "rgba(245,245,247,0.08)" } },
+      },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: {
+          type: "cross",
+          label: { backgroundColor: "rgba(29,29,31,0.90)", borderColor: "rgba(245,245,247,0.16)" },
+          lineStyle: { color: "rgba(245,245,247,0.18)" },
+        },
+        backgroundColor: "rgba(29,29,31,0.82)",
+        borderColor: "rgba(245,245,247,0.14)",
+        borderWidth: 1,
+        textStyle: { color: "#f5f5f7", fontFamily: '"Inter Tight", system-ui, -apple-system, Segoe UI, Roboto, Arial' },
+        extraCssText: "border-radius: 14px; backdrop-filter: blur(14px);",
+        formatter: (params) => {
+          const p0 = Array.isArray(params) ? params[0] : null;
+          const idx = p0 ? Number(p0.dataIndex) : null;
+          const pt = Number.isFinite(idx) ? state.points[idx] : null;
+          if (!pt) return "";
+          const date = formatLongDateTR(pt.day);
+          const main = isPct ? formatSignedPct(pt.pct) : formatTL(pt.value);
+          const dayRet = pt.dayReturnPct == null ? NA : formatSignedPct(pt.dayReturnPct);
+          return `<div style="font-size:12px;color:rgba(245,245,247,0.70)">${escapeHTML(
+            date
+          )}</div><div style="margin-top:3px;font-size:16px;font-weight:600">${escapeHTML(
+            main
+          )}</div><div style="margin-top:4px;font-size:12px;color:rgba(245,245,247,0.78)">Günlük: ${escapeHTML(
+            dayRet
+          )}</div>`;
+        },
+      },
+      dataZoom: [
+        { type: "inside", xAxisIndex: 0, startValue: t0, endValue: t1, filterMode: "none" },
+        {
+          type: "slider",
+          xAxisIndex: 0,
+          startValue: t0,
+          endValue: t1,
+          height: 18,
+          bottom: 8,
+          borderColor: "rgba(245,245,247,0.10)",
+          backgroundColor: "rgba(0,0,0,0.12)",
+          fillerColor: "rgba(245,245,247,0.10)",
+          handleStyle: { color: "rgba(245,245,247,0.35)", borderColor: "rgba(245,245,247,0.12)" },
+          textStyle: { color: "rgba(245,245,247,0.55)" },
+        },
+      ],
+      series: [
+        {
+          type: "line",
+          name: metricLabel(state.metric),
+          showSymbol: false,
+          smooth: true,
+          data: seriesData,
+          lineStyle: { width: 2.6, color: theme.line },
+          areaStyle: {
+            color: new window.echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: theme.fill },
+              { offset: 1, color: "rgba(245,245,247,0)" },
+            ]),
+          },
+          emphasis: { lineStyle: { width: 3.2 } },
+          markLine: isPct
+            ? {
+                silent: true,
+                symbol: "none",
+                lineStyle: { type: "dashed", color: "rgba(245,245,247,0.18)" },
+                data: [{ yAxis: 0 }],
+              }
+            : undefined,
+        },
+      ],
+    };
+
+    setStatus("");
+    chart.setOption(option, true);
+    updateKpi();
+  };
+
+  const setData = (points) => {
+    const raw = Array.isArray(points) ? points : [];
+    state.points = raw
+      .map((p) => {
+        const t = parseDayKeyUTC(p?.day);
+        return t == null ? null : { ...p, t };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.t - b.t);
+    render();
+  };
+
+  const setMetric = (metric) => {
+    if (metric !== "pct" && metric !== "value") return;
+    state.metric = metric;
+    STATE.ui.chartPrefs.metric = metric;
+    setMetricButtons();
+    render();
+  };
+
+  const setRange = (range) => {
+    if (!["1W", "1M", "3M", "6M", "YTD", "1Y", "ALL", "CUSTOM"].includes(range)) return;
+    state.range = range;
+    STATE.ui.chartPrefs.range = range;
+    setRangeButtons();
+    render();
+  };
+
+  const downloadPNG = () => {
+    if (!chart) return;
+    const url = chart.getDataURL({ type: "png", pixelRatio: 2, backgroundColor: "#141416" });
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grafik-${state.metric}.png`;
+    a.click();
+  };
+
+  const downloadCSV = () => {
+    const pts = visiblePoints();
+    const lines = ["day,pct,value,dayReturnPct"];
+    for (const p of pts) {
+      const day = String(p?.day ?? "");
+      const pct = p?.pct == null ? "" : String(p.pct);
+      const value = p?.value == null ? "" : String(p.value);
+      const dayReturnPct = p?.dayReturnPct == null ? "" : String(p.dayReturnPct);
+      lines.push([day, pct, value, dayReturnPct].join(","));
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grafik-${state.metric}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  container.addEventListener("click", (e) => {
+    const btn = e.target?.closest?.("button");
+    if (!btn) return;
+
+    const metric = btn.dataset?.metric;
+    if (metric) return setMetric(metric);
+
+    const range = btn.dataset?.range;
+    if (range) return setRange(range);
+
+    const action = btn.dataset?.action;
+    if (action === "download-png") downloadPNG();
+    if (action === "download-csv") downloadCSV();
+  });
+
+  if (chart) {
+    chart.on("dataZoom", (ev) => {
+      const b = Array.isArray(ev?.batch) ? ev.batch[0] : null;
+      if (b && Number.isFinite(Number(b.startValue)) && Number.isFinite(Number(b.endValue))) {
+        state.range = "CUSTOM";
+        STATE.ui.chartPrefs.range = "CUSTOM";
+        state.view = { t0: Number(b.startValue), t1: Number(b.endValue) };
+        setRangeButtons();
+        updateKpi();
+      }
+    });
+  }
+
+  const resize = () => chart?.resize?.();
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => resize()) : null;
+  if (ro && stage) ro.observe(stage);
+
+  const widget = { setData, setMetric, setRange, setStatus, resize };
+  TWR_ECHART_WIDGETS.set(container, widget);
+
+  setMetricButtons();
+  setRangeButtons();
+  resize();
+  return widget;
+}
+
 function ensureTwrChartWidget(container) {
   const existing = CHART_WIDGETS.get(container);
   if (existing) return existing;
@@ -1452,7 +1796,7 @@ function ensureTwrChartWidget(container) {
 function renderTWRChart(points, { container, meta, errors } = {}) {
   if (!container) return;
   const list = Array.isArray(points) ? points : [];
-  const widget = ensureTwrChartWidget(container);
+  const widget = ensureTwrEChartWidget(container);
 
   if (errors && Object.keys(errors).length) {
     const bad = Object.entries(errors)
@@ -1479,7 +1823,7 @@ async function updateChart(positions) {
   const meta = document.getElementById("twr-meta");
   if (!container) return;
 
-  const widget = ensureTwrChartWidget(container);
+  const widget = ensureTwrEChartWidget(container);
   const tickers = tickersFromPositionsList(positions);
   if (!tickers.length) {
     widget.setData([]);
@@ -1934,6 +2278,7 @@ function tableHTML(items, { mode }) {
           <th>Adet</th>
           <th>Tutar</th>
           <th>Günlük %</th>
+          <th>Toplam %</th>
           <th>Değer</th>
         </tr>
       </thead>
@@ -1946,7 +2291,7 @@ function tableHTML(items, { mode }) {
           <tbody>
             <tr>
               <th class="sticky-col">${NA}</th>
-              <td class="unavailable" colspan="6">Kriterlere uyan pozisyon yok.</td>
+              <td class="unavailable" colspan="7">Kriterlere uyan pozisyon yok.</td>
             </tr>
           </tbody>
         `
@@ -1962,18 +2307,23 @@ function tableHTML(items, { mode }) {
         const quote = STATE.quotes?.[symbol];
         const livePrice = Number(quote?.price);
         const liveChangePct = Number(quote?.changePct);
+        const unitCost = Number(p?.unitCost);
+        const totalChangePct =
+          Number.isFinite(livePrice) && Number.isFinite(unitCost) && unitCost !== 0 ? ((livePrice / unitCost) - 1) * 100 : null;
         const liveValue = qty != null && Number.isFinite(livePrice) ? qty * livePrice : null;
 
         const changeCls = signedClass(liveChangePct);
+        const totalCls = signedClass(totalChangePct);
 
         return `
           <tr>
             <th class="sticky-col">${escapeHTML(symbol)}</th>
-            <td class="left">${escapeHTML(buy)}</td>
+            <td class="left cell-muted">${escapeHTML(buy)}</td>
             <td>${escapeHTML(formatTL(p.unitCost))}</td>
-            <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
+            <td class="cell-muted">${escapeHTML(qty == null ? NA : String(qty))}</td>
             <td>${escapeHTML(formatTL(p.total))}</td>
             <td class="cell ${changeCls}">${escapeHTML(Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA)}</td>
+            <td class="cell ${totalCls}">${escapeHTML(totalChangePct == null ? NA : formatSignedPct(totalChangePct))}</td>
             <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
           </tr>
         `;
@@ -2081,9 +2431,9 @@ function tableHTML(items, { mode }) {
         return `
           <tr>
             <th class="sticky-col">${escapeHTML(symbol)}</th>
-            <td class="left">${escapeHTML(buy)}</td>
+            <td class="left cell-muted">${escapeHTML(buy)}</td>
             <td>${escapeHTML(formatTL(p.unitCost))}</td>
-            <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
+            <td class="cell-muted">${escapeHTML(qty == null ? NA : String(qty))}</td>
             <td>${escapeHTML(formatTL(p.total))}</td>
             <td>${escapeHTML(Number.isFinite(livePrice) ? formatTL(livePrice) : NA)}</td>
             <td class="cell ${changeCls}${flashCls ? ` ${flashCls}` : ""}">${escapeHTML(

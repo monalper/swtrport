@@ -1979,6 +1979,8 @@ function buildSummary(positions) {
   const hasLive = liveAgg.priced > 0;
   const dayBaseValue = hasLive ? liveAgg.marketValue - liveAgg.dayChange : null;
   const dayChangePct = dayBaseValue ? (liveAgg.dayChange / dayBaseValue) * 100 : null;
+  const totalBaseValue = hasLive ? liveAgg.marketValue - liveAgg.unrealized : null;
+  const totalReturnPct = totalBaseValue ? (liveAgg.unrealized / totalBaseValue) * 100 : null;
 
   renderHero({
     activeTL: activeAgg.invested,
@@ -2005,6 +2007,11 @@ function buildSummary(positions) {
       "Günlük Getiri",
       hasLive ? formatSignedPct(dayChangePct) : NA,
       hasLive ? signedClass(dayChangePct) : "warn"
+    ),
+    statHTML(
+      "Total Getiri",
+      hasLive ? formatSignedPct(totalReturnPct) : NA,
+      hasLive ? signedClass(totalReturnPct) : "warn"
     ),
   ]);
 
@@ -2581,6 +2588,8 @@ function computePdfSummaryStats(positions) {
   const hasLive = liveAgg.priced > 0;
   const dayBaseValue = hasLive ? liveAgg.marketValue - liveAgg.dayChange : null;
   const dayChangePct = dayBaseValue ? (liveAgg.dayChange / dayBaseValue) * 100 : null;
+  const totalBaseValue = hasLive ? liveAgg.marketValue - liveAgg.unrealized : null;
+  const totalReturnPct = totalBaseValue ? (liveAgg.unrealized / totalBaseValue) * 100 : null;
 
   return {
     openCount: open.length,
@@ -2589,6 +2598,7 @@ function computePdfSummaryStats(positions) {
     liveAgg,
     hasLive,
     dayChangePct,
+    totalReturnPct,
     realizedPnL,
     realizedPct,
     winRate,
@@ -2892,6 +2902,7 @@ async function exportPortfolioPDF() {
       ["Canlı P/L", summary.hasLive ? smoney(summary.liveAgg.unrealized) : NA],
       ["Günlük P/L", summary.hasLive ? smoney(summary.liveAgg.dayChange) : NA],
       ["Günlük Getiri", summary.hasLive ? spct(summary.dayChangePct) : NA],
+      ["Total Getiri", summary.hasLive ? spct(summary.totalReturnPct) : NA],
       ["Gerçekleşen P/L", smoney(summary.realizedPnL.pnlTL)],
       ["Gerçekleşen Getiri", spct(summary.realizedPct)],
       ["Kazanma Oranı", formatPct(summary.winRate)],

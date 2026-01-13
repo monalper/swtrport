@@ -27,6 +27,11 @@ body {
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   color: var(--text);
@@ -751,6 +756,8 @@ h2 {
   background: transparent;
   border: none;
   border-radius: 18px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 table {
@@ -1020,6 +1027,63 @@ tbody tr td.flash-down {
 }
 
 @media (max-width: 520px) {
+  .container {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .appLogoBox {
+    width: 44px;
+    height: 44px;
+    align-self: center;
+  }
+
+  .appLogo {
+    width: 22px;
+    height: 22px;
+    max-height: 44px;
+    object-fit: contain;
+  }
+
+  .mainTabs {
+    display: flex;
+    overflow: auto;
+    gap: 8px;
+    padding: 6px 8px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .mainTab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    scroll-snap-align: center;
+  }
+
+  .mainTabIndicator {
+    display: none;
+  }
+
+  .mainTab[aria-selected="true"] {
+    background: rgba(245, 245, 247, 0.14);
+    color: rgba(245, 245, 247, 0.92);
+  }
+
+  .mainTab[aria-selected="true"]:hover {
+    background: rgba(245, 245, 247, 0.18);
+    color: rgba(245, 245, 247, 0.98);
+  }
+
+  .btn,
+  .btn-sm,
+  .mainTab,
+  .mainTabAction,
+  input,
+  select {
+    min-height: 44px;
+  }
+
   .heroSub {
     flex-direction: column;
     gap: 14px;
@@ -1028,11 +1092,11 @@ tbody tr td.flash-down {
   .heroStat {
     min-width: auto;
   }
+}
 
+@media (max-width: 380px) {
   .statsGrid,
-  .summaryGrid {
-    grid-template-columns: 1fr;
-  }
+  .summaryGrid,
   .controls {
     grid-template-columns: 1fr;
   }

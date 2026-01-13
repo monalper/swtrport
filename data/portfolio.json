@@ -108,6 +108,30 @@
       "takeProfit": 57.43,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "ALKLC",
+      "buyDate": "2026-01-14",
+      "sellDate": null,
+      "unitCost": 214.10,
+      "status": "İletilecek",
+      "total": 1712.80,
+      "stopLoss": 181.45,
+      "takeProfit": 295.72,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "AYCES",
+      "buyDate": "2026-01-14",
+      "sellDate": null,
+      "unitCost": 462.0,
+      "status": "İletilecek",
+      "total": 3696.0,
+      "stopLoss": 427.25,
+      "takeProfit": 548.87,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

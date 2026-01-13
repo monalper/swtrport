@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Portföy Paneli</title>
+    <title>TOF | Porföy</title>
     <meta name="description" content="Portföy takip paneli" />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#141416" />
@@ -16,11 +16,23 @@
     />
 
     <link rel="stylesheet" href="styles.css" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <a class="skip" href="#main">İçeriğe atla</a>
 
     <main class="container" id="main">
+      <header class="appHeader" aria-label="Üst bar">
+        <div class="appHeaderLeft">
+          <div class="appLogoBox" aria-label="Logo">
+            <img class="appLogo" src="assets/headerlogo.svg" alt="Logo" draggable="false" />
+          </div>
+        </div>
+        <div class="appHeaderRight" id="app-header-actions" aria-label="Araçlar">
+          <button class="btn btn-sm" type="button" id="btn-export-pdf">PDF İndir</button>
+        </div>
+      </header>
+
       <header class="hero" aria-label="Özet">
         <div class="heroValue" id="hero-current" aria-live="polite"></div>
         <div class="heroSub" aria-label="Hızlı metrikler">
@@ -32,9 +44,6 @@
             <div class="heroLabel">Günlük</div>
             <div class="heroSmall" id="hero-day"></div>
           </div>
-        </div>
-        <div class="heroActions" aria-label="Dışa aktar">
-          <button class="btn btn-sm" type="button" id="btn-export-pdf">PDF İndir</button>
         </div>
       </header>
 
@@ -161,5 +170,6 @@
     <script src="assets/vendor/pdfmake.min.js" defer></script>
     <script src="assets/vendor/vfs_fonts.js" defer></script>
     <script src="app.js" defer></script>
+    <script src="privacy.js" defer></script>
   </body>
 </html>

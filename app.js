@@ -44,6 +44,22 @@ const el = {
   btnExportPdf: document.getElementById("btn-export-pdf"),
 };
 
+const DOWNLOAD_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+
+function mountExportPdfButtonInHeader() {
+  const btn = el.btnExportPdf;
+  const actions = document.getElementById("app-header-actions");
+  if (!btn || !actions) return;
+
+  btn.classList.remove("btn", "btn-sm");
+  btn.classList.add("mainTabAction");
+  btn.setAttribute("aria-label", "PDF indir");
+  btn.title = "PDF indir";
+  btn.innerHTML = DOWNLOAD_ICON_SVG;
+
+  if (btn.parentElement !== actions) actions.appendChild(btn);
+}
+
 function escapeHTML(s) {
   return String(s)
     .replaceAll("&", "&amp;")
@@ -134,11 +150,11 @@ function renderHero({ activeTL, currentTL, dayChangeTL, dayChangePct, hasLive } 
   if (el.heroCurrent) {
     const parts = formatMoneyPartsTR(currentTL);
     if (parts) {
-      el.heroCurrent.innerHTML = `
-        <span class="heroSymbol">${escapeHTML(currencySymbolFor(getCurrency()))}</span>
-        <span class="heroInt">${escapeHTML(parts.intPart)}</span>
-        <span class="heroFrac">${escapeHTML(parts.fracPart)}</span>
-      `.trim();
+      el.heroCurrent.innerHTML = `<span class="heroSymbol">${escapeHTML(
+        currencySymbolFor(getCurrency())
+      )}</span><span class="heroInt">${escapeHTML(parts.intPart)}</span><span class="heroFrac">${escapeHTML(
+        parts.fracPart
+      )}</span>`;
     } else {
       el.heroCurrent.textContent = NA;
     }
@@ -2335,10 +2351,10 @@ function tableHTML(items, { mode }) {
             <td class="left cell-muted">${escapeHTML(buy)}</td>
             <td>${escapeHTML(formatTL(p.unitCost))}</td>
             <td class="cell-muted">${escapeHTML(qty == null ? NA : String(qty))}</td>
-            <td>${escapeHTML(formatTL(p.total))}</td>
+            <td data-sensitive="tutar">${escapeHTML(formatTL(p.total))}</td>
             <td class="cell ${changeCls}">${escapeHTML(Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA)}</td>
             <td class="cell ${totalCls}">${escapeHTML(totalChangePct == null ? NA : formatSignedPct(totalChangePct))}</td>
-            <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
+            <td data-sensitive="deger">${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
           </tr>
         `;
       })
@@ -2448,12 +2464,12 @@ function tableHTML(items, { mode }) {
             <td class="left cell-muted">${escapeHTML(buy)}</td>
             <td>${escapeHTML(formatTL(p.unitCost))}</td>
             <td class="cell-muted">${escapeHTML(qty == null ? NA : String(qty))}</td>
-            <td>${escapeHTML(formatTL(p.total))}</td>
+            <td data-sensitive="tutar">${escapeHTML(formatTL(p.total))}</td>
             <td>${escapeHTML(Number.isFinite(livePrice) ? formatTL(livePrice) : NA)}</td>
             <td class="cell ${changeCls}${flashCls ? ` ${flashCls}` : ""}">${escapeHTML(
               Number.isFinite(liveChangePct) ? formatSignedPct(liveChangePct) : NA
             )}</td>
-            <td>${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
+            <td data-sensitive="deger">${escapeHTML(liveValue == null ? NA : formatTL(liveValue))}</td>
             <td class="cell ${unrealTLCls}">${escapeHTML(unrealTL == null ? NA : formatSignedTL(unrealTL))}</td>
             <td class="cell ${unrealPctCls}">${escapeHTML(unrealPct == null ? NA : formatSignedPct(unrealPct))}</td>
             <td>${escapeHTML(formatTL(p.stopLoss))}</td>
@@ -2474,7 +2490,7 @@ function tableHTML(items, { mode }) {
           <td>${escapeHTML(formatTL(p.unitCost))}</td>
           <td class="left">${escapeHTML(p.status ?? NA)}</td>
           <td>${escapeHTML(qty == null ? NA : String(qty))}</td>
-          <td>${escapeHTML(formatTL(p.total))}</td>
+          <td data-sensitive="tutar">${escapeHTML(formatTL(p.total))}</td>
           <td class="cell ${pnlCls}">${escapeHTML(pnlTL == null ? NA : formatSignedTL(pnlTL))}</td>
           <td class="cell ${pnlCls}">${escapeHTML(pnlPct == null ? NA : formatSignedPct(pnlPct))}</td>
           <td>${escapeHTML(formatTL(p.stopLoss))}</td>
@@ -3293,6 +3309,7 @@ function loadFromLocalFile(file) {
 
 function wire() {
   if (STATE.ui.wired) return;
+  mountExportPdfButtonInHeader();
   const filterEls = [document.getElementById("q"), document.getElementById("status"), document.getElementById("outcome")].filter(
     Boolean
   );

@@ -70,8 +70,47 @@ code {
 .container {
   max-width: 980px;
   margin: 0 auto;
-  padding: 54px 18px 54px;
+  padding: 0 18px 54px;
   min-height: 100vh;
+}
+
+.appHeader {
+  width: min(920px, 100%);
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 72px;
+}
+
+.appHeaderLeft {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.appLogo {
+  height: 50%;
+  max-height: 32px;
+  width: auto;
+  display: block;
+}
+
+.appLogoBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1 / 1;
+  align-self: stretch;
+  padding: 0;
+  background: transparent;
+}
+
+.appHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .subtle {
@@ -86,13 +125,13 @@ code {
   display: grid;
   place-items: center;
   text-align: center;
-  margin-bottom: 18px;
+  padding: 22px 0 26px;
+  margin-bottom: 26px;
 }
 
 .heroValue {
   font-size: clamp(44px, 6.2vw, 68px);
   font-weight: 600;
-  letter-spacing: -0.04em;
   line-height: 1;
 }
 
@@ -103,12 +142,14 @@ code {
 
 .heroInt {
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .heroFrac {
   color: rgba(245, 245, 247, 0.42);
   font-weight: 600;
   font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
 }
 
 .heroSub {
@@ -223,6 +264,42 @@ code {
 .mainTab:focus-visible {
   outline: 2px solid var(--muted2);
   outline-offset: 2px;
+}
+
+.mainTabAction {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(245, 245, 247, 0.78);
+  border-radius: 999px;
+  padding: 10px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: end;
+}
+
+.mainTabAction:hover {
+  background: rgba(245, 245, 247, 0.08);
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.mainTabAction[aria-pressed="true"] {
+  background: rgba(245, 245, 247, 0.16);
+  color: rgba(245, 245, 247, 0.92);
+}
+
+.mainTabAction:focus-visible {
+  outline: 2px solid var(--muted2);
+  outline-offset: 2px;
+}
+
+.mainTabAction svg {
+  width: 18px;
+  height: 18px;
 }
 
 .mainPanels {

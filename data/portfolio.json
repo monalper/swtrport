@@ -52,13 +52,13 @@
     {
       "symbol": "AHSGY",
       "buyDate": "2026-01-07",
-      "sellDate": null,
+      "sellDate": "2026-01-14",
       "unitCost": 18.48,
       "status": "Gerçekleşti",
       "total": 2217.6,
       "stopLoss": 19.20,
-      "takeProfit": 24.08,
-      "outcome": null,
+      "takeProfit": 22.76,
+      "outcome": 1,
       "notes": null
     },
     {

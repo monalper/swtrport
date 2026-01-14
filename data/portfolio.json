@@ -120,6 +120,18 @@
       "takeProfit": 295.72,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "FORTE",
+      "buyDate": "2026-01-14",
+      "sellDate": null,
+      "unitCost": 94.30,
+      "status": "Gerçekleşti",
+      "total": 2357.50,
+      "stopLoss": null,
+      "takeProfit": null,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

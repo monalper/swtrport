@@ -120,6 +120,18 @@
       "takeProfit": 295.72,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "MEGMT",
+      "buyDate": "2026-01-15",
+      "sellDate": null,
+      "unitCost": 57.10,
+      "status": "Gerçekleşti",
+      "total": 2683.70,
+      "stopLoss": 51.35,
+      "takeProfit": 71.47,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

@@ -132,6 +132,18 @@
       "takeProfit": 71.47,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "TUKAS",
+      "buyDate": "2026-01-16",
+      "sellDate": null,
+      "unitCost": 2.83,
+      "status": "Gerçekleşti",
+      "total": 4140.29,
+      "stopLoss": 2.65,
+      "takeProfit": 3.29,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

@@ -136,7 +136,7 @@
     {
       "symbol": "GRNYO",
       "buyDate": "2026-01-19",
-      "sellDate": null,
+      "sellDate": "2026-01-19",
       "unitCost": 18.32,
       "status": "Gerçekleşti",
       "total": 2436.56,

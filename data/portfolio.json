@@ -132,6 +132,18 @@
       "takeProfit": 3.29,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "GRNYO",
+      "buyDate": "2026-01-19",
+      "sellDate": null,
+      "unitCost": 18.52,
+      "status": "Gerçekleşti",
+      "total": 2436.56,
+      "stopLoss": 16.49,
+      "takeProfit": 22.90,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

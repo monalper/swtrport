@@ -2887,7 +2887,7 @@ async function exportPortfolioPDF() {
       kv("Para birimi", getCurrency()),
       kv("Pozisyon", String(positions.length)),
       kv("Açık / Kapalı", `${open.length} / ${closed.length}`),
-      kv("Filtre", filterParts.length ? filterParts.join(" | ") : "-"),
+      kv("Filtre", filterParts.length ? filterParts.join(" | ") : "Swing Trade"),
       kv("Canlı", liveLine),
     ];
 

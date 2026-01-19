@@ -16,13 +16,13 @@
     {
       "symbol": "KAYSE",
       "buyDate": "2026-01-05",
-      "sellDate": null,
+      "sellDate": "2026-01-19",
       "unitCost": 4.59,
       "status": "Gerçekleşti",
       "total": 3956.58,
       "stopLoss": 4.62,
       "takeProfit": 5.36,
-      "outcome": null,
+      "outcome": 1,
       "notes": "Ani Gelişme: Hisse bölündü, ort. maliyet ve diğer veriler ona göre güncellendi."
     },
     {

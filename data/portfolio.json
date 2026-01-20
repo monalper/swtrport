@@ -136,13 +136,25 @@
     {
       "symbol": "GRNYO",
       "buyDate": "2026-01-19",
-      "sellDate": null,
+      "sellDate": "2026-01-20",
       "unitCost": 18.32,
       "status": "Gerçekleşti",
       "total": 2436.56,
-      "stopLoss": 16.49,
+      "stopLoss": 16.65,
       "takeProfit": 22.90,
-      "outcome": null,
+      "outcome": 0,
+      "notes": null
+    },
+    {
+      "symbol": "PNLSN",
+      "buyDate": "2026-01-20",
+      "sellDate": null,
+      "unitCost": 41.26,
+      "status": "Gerçekleşti",
+      "total": 5776.40,
+      "stopLoss": 38.32,
+      "takeProfit": 47.40,
+      "outcome": 0,
       "notes": null
     }
   ]

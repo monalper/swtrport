@@ -40,13 +40,13 @@
     {
       "symbol": "EUPWR",
       "buyDate": "2026-01-05",
-      "sellDate": null,
+      "sellDate": "2026-01-20",
       "unitCost": 33.6,
       "status": "Gerçekleşti",
       "total": 3662.4,
       "stopLoss": 36.58,
-      "takeProfit": 39.98,
-      "outcome": null,
+      "takeProfit": 39.60,
+      "outcome": 1,
       "notes": null
     },
     {

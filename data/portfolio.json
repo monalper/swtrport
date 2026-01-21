@@ -100,13 +100,13 @@
     {
       "symbol": "GESAN",
       "buyDate": "2026-01-13",
-      "sellDate": null,
+      "sellDate": "2026-01-16",
       "unitCost": 49.88,
       "status": "Gerçekleşti",
       "total": 4439.32,
-      "stopLoss": 49.30,
+      "stopLoss": 51.85,
       "takeProfit": 57.43,
-      "outcome": null,
+      "outcome": 1,
       "notes": null
     },
     {
@@ -124,13 +124,13 @@
     {
       "symbol": "TUKAS",
       "buyDate": "2026-01-16",
-      "sellDate": null,
+      "sellDate": "2026-01-21",
       "unitCost": 2.83,
       "status": "Gerçekleşti",
       "total": 4140.29,
-      "stopLoss": 2.65,
+      "stopLoss": 2.80,
       "takeProfit": 3.29,
-      "outcome": null,
+      "outcome": 0,
       "notes": null
     },
     {
@@ -154,7 +154,31 @@
       "total": 5776.40,
       "stopLoss": 38.32,
       "takeProfit": 47.40,
-      "outcome": 0,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "PRDGS",
+      "buyDate": "2026-01-21",
+      "sellDate": null,
+      "unitCost": 6.62,
+      "status": "Gerçekleşti",
+      "total": 5428.40,
+      "stopLoss": 6.10,
+      "takeProfit": 7.92,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "GARFA",
+      "buyDate": "2026-01-21",
+      "sellDate": null,
+      "unitCost": 29.54,
+      "status": "Gerçekleşti",
+      "total": 4844.56,
+      "stopLoss": 26.96,
+      "takeProfit": 36.00,
+      "outcome": null,
       "notes": null
     }
   ]

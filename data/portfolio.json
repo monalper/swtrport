@@ -76,13 +76,13 @@
     {
       "symbol": "OFSYM",
       "buyDate": "2026-01-12",
-      "sellDate": null,
+      "sellDate": "2026-01-22",
       "unitCost": 74.00,
       "status": "Gerçekleşti",
       "total": 3626.00,
       "stopLoss": 68.55,
       "takeProfit": 87.68,
-      "outcome": null,
+      "outcome": 0,
       "notes": null
     },
     {

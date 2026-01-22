@@ -204,6 +204,18 @@
       "takeProfit": 68.70,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "EDIP",
+      "buyDate": "2026-01-23",
+      "sellDate": null,
+      "unitCost": 37.76,
+      "status": "Gerçekleşirse iyi olur :D",
+      "total": 13064.96,
+      "stopLoss": 36.70,
+      "takeProfit": 40.42,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

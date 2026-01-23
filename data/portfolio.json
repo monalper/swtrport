@@ -88,7 +88,7 @@
     {
       "symbol": "LILAK",
       "buyDate": "2026-01-13",
-      "sellDate": null,
+      "sellDate": "2026-01-23",
       "unitCost": 31.28,
       "status": "Gerçekleşti",
       "total": 3910.00,
@@ -112,7 +112,7 @@
     {
       "symbol": "MEGMT",
       "buyDate": "2026-01-15",
-      "sellDate": null,
+      "sellDate": "2026-01-23",
       "unitCost": 57.10,
       "status": "Gerçekleşti",
       "total": 2683.70,
@@ -148,7 +148,7 @@
     {
       "symbol": "PNLSN",
       "buyDate": "2026-01-20",
-      "sellDate": null,
+      "sellDate": "2026-01-23",
       "unitCost": 41.26,
       "status": "Gerçekleşti",
       "total": 5776.40,
@@ -160,7 +160,7 @@
     {
       "symbol": "PRDGS",
       "buyDate": "2026-01-21",
-      "sellDate": null,
+      "sellDate": "2026-01-23",
       "unitCost": 6.62,
       "status": "Gerçekleşti",
       "total": 5428.40,
@@ -172,7 +172,7 @@
     {
       "symbol": "GARFA",
       "buyDate": "2026-01-21",
-      "sellDate": null,
+      "sellDate": "2026-01-23",
       "unitCost": 29.54,
       "status": "Gerçekleşti",
       "total": 4844.56,
@@ -206,14 +206,38 @@
       "notes": null
     },
     {
-      "symbol": "EDIP",
+      "symbol": "DEVA",
       "buyDate": "2026-01-23",
       "sellDate": null,
-      "unitCost": 37.76,
-      "status": "Gerçekleşirse iyi olur :D",
-      "total": 13064.96,
-      "stopLoss": 36.70,
-      "takeProfit": 40.42,
+      "unitCost": 179.80,
+      "status": "Gerçekleşti",
+      "total": 11327.40,
+      "stopLoss": 172.80,
+      "takeProfit": 193.70,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "DERIM",
+      "buyDate": "2026-01-23",
+      "sellDate": null,
+      "unitCost": 37.78,
+      "status": "Gerçekleşti",
+      "total": 8462.72,
+      "stopLoss": 36.18,
+      "takeProfit": 42.02,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "YEOTK",
+      "buyDate": "2026-01-23",
+      "sellDate": null,
+      "unitCost": 43.48,
+      "status": "Gerçekleşti",
+      "total": 7970.88,
+      "stopLoss": 41.60,
+      "takeProfit": 47.48,
       "outcome": null,
       "notes": null
     }

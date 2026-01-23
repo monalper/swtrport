@@ -93,8 +93,8 @@
       "status": "Gerçekleşti",
       "total": 3910.00,
       "stopLoss": 30.60,
-      "takeProfit": 36.66,
-      "outcome": null,
+      "takeProfit": 33.22,
+      "outcome": 1,
       "notes": null
     },
     {
@@ -117,8 +117,8 @@
       "status": "Gerçekleşti",
       "total": 2683.70,
       "stopLoss": 54.05,
-      "takeProfit": 71.47,
-      "outcome": null,
+      "takeProfit": 61.65,
+      "outcome": 1,
       "notes": null
     },
     {
@@ -152,9 +152,9 @@
       "unitCost": 41.26,
       "status": "Gerçekleşti",
       "total": 5776.40,
-      "stopLoss": 38.32,
+      "stopLoss": 41.08,
       "takeProfit": 47.40,
-      "outcome": null,
+      "outcome": 0,
       "notes": null
     },
     {
@@ -165,8 +165,8 @@
       "status": "Gerçekleşti",
       "total": 5428.40,
       "stopLoss": 6.10,
-      "takeProfit": 7.92,
-      "outcome": null,
+      "takeProfit": 6.74,
+      "outcome": 1,
       "notes": null
     },
     {
@@ -177,8 +177,8 @@
       "status": "Gerçekleşti",
       "total": 4844.56,
       "stopLoss": 26.96,
-      "takeProfit": 36.00,
-      "outcome": null,
+      "takeProfit": 29.72,
+      "outcome": 1,
       "notes": null
     },
     {

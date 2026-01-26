@@ -208,13 +208,13 @@
     {
       "symbol": "ULUSE",
       "buyDate": "2026-01-23",
-      "sellDate": null,
+      "sellDate": "2026-01-26",
       "unitCost": 179.80,
       "status": "Gerçekleşti",
       "total": 11327.40,
       "stopLoss": 172.80,
       "takeProfit": 193.70,
-      "outcome": null,
+      "outcome": 1,
       "notes": null
     },
     {

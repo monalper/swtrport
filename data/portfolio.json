@@ -240,6 +240,30 @@
       "takeProfit": 47.48,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "KZGYO",
+      "buyDate": "2026-01-26",
+      "sellDate": null,
+      "unitCost": 26.97,
+      "status": "Gerçekleşti",
+      "total": 11677.37,
+      "stopLoss": 26.06,
+      "takeProfit": 29.08,
+      "outcome": null,
+      "notes": null
+    },
+    {
+      "symbol": "CWENE",
+      "buyDate": "2026-01-26",
+      "sellDate": null,
+      "unitCost": 31.06,
+      "status": "Gerçekleşti",
+      "total": 10746.76,
+      "stopLoss": 29.96,
+      "takeProfit": 33.72,
+      "outcome": null,
+      "notes": null
     }
   ]
 }

@@ -256,13 +256,13 @@
     {
       "symbol": "CWENE",
       "buyDate": "2026-01-26",
-      "sellDate": null,
+      "sellDate": "2026-01-29",
       "unitCost": 31.06,
       "status": "Gerçekleşti",
       "total": 10746.76,
       "stopLoss": 29.96,
       "takeProfit": 33.72,
-      "outcome": null,
+      "outcome": 1,
       "notes": null
     },
     {

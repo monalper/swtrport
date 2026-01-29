@@ -264,6 +264,18 @@
       "takeProfit": 33.72,
       "outcome": null,
       "notes": null
+    },
+    {
+      "symbol": "ECZYT",
+      "buyDate": "2026-01-29",
+      "sellDate": null,
+      "unitCost": 341.00,
+      "status": "Gerçekleşti",
+      "total": 9207.00,
+      "stopLoss": 324.25,
+      "takeProfit": 372.25,
+      "outcome": null,
+      "notes": null
     }
   ]
 }
